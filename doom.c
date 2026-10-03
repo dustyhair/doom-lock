@@ -15,6 +15,7 @@
 #define BFG_TRAVEL_TICKS 6
 #define BFG_BLAST_TICKS 4
 #define BFG_SETTLE_TICKS 2
+#define SCENE_FRAME_SECONDS (1.0 / 30.0)
 typedef struct {
     const char *id, *name;
     int count, walk_count;
@@ -50,6 +51,8 @@ static bool bfg_kill;
 static int bfg_tick;
 static int current, frame = -1, corpse_ticks;
 static ev_timer animation;
+static ev_timer scene_animation;
+static double scene_updated;
 extern auth_state_t auth_state;
 extern char *modifier_string;
 extern int input_position;
@@ -168,8 +171,9 @@ void doom_authenticated(bool fingerprint) {
 
 static void tick(EV_P_ ev_timer *watcher, int events) {
     if (failure) return;
-    if (!authenticated) level_tick(0.14);
     walk_tick++;
+    /* The camera renders independently of Doom's slower sprite frames. */
+    if (!authenticated) return;
     if (bfg_kill) {
         bfg_tick++;
         if (bfg_tick == BFG_TRAVEL_TICKS) {
@@ -206,8 +210,20 @@ static void tick(EV_P_ ev_timer *watcher, int events) {
     redraw_screen();
 }
 
+static void scene_tick(EV_P_ ev_timer *watcher, int events) {
+    double now = ev_now(loop);
+    double elapsed = now - scene_updated;
+    scene_updated = now;
+    if (failure || authenticated) return;
+    level_tick(elapsed);
+    redraw_screen();
+}
+
 void doom_start(struct ev_loop *loop) {
     if (!enabled) return;
+    scene_updated = ev_now(loop);
+    ev_timer_init(&scene_animation, scene_tick, SCENE_FRAME_SECONDS, SCENE_FRAME_SECONDS);
+    ev_timer_start(loop, &scene_animation);
     ev_timer_init(&animation, tick, 0.14, 0.14);
     ev_timer_start(loop, &animation);
 }

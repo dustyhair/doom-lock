@@ -23,9 +23,13 @@ colors receive only neutral distance shading. MAP24's style includes an animated
 slime basin confined to one rock-lined room with a dry border. The maze geometry
 is generated, rather than copied from those maps.
 A small CPU raycaster draws the scene at 416 pixels wide and scales it with
-nearest-neighbor filtering. It runs only within the lock screen and does not
-change desktop idle settings. Camera movement pauses during authentication
-success and the failure screen so the BFG and screen melts keep a stable scene.
+nearest-neighbor filtering. The camera redraws at 30 FPS, while monster sprite
+frames keep their original slower pace. Movement uses elapsed time, preserving
+the slow walk speed. Walls are rendered first so hidden floor and ceiling
+pixels need no texture sampling or shading. It runs only within the lock screen
+and does not change desktop idle settings. Camera movement pauses during
+authentication success and the failure screen so the BFG and screen melts keep
+a stable scene.
 
 Monsters use the same perspective projection as the maze. Maze cells and ceiling
 height represent 128 Doom units, floor textures repeat every 64 units, and the
@@ -158,6 +162,13 @@ are written to `build/test-results/level-*.png` and `build/test-results/monster-
 
 If Picom is installed, run `DOOM_TEST_PICOM=1 python3 tests/test-lock.py` to repeat
 the checks with compositor shadows and fading enabled on the isolated display.
+
+`python3 tools/benchmark-level.py` measures CPU maze rendering on fixed tours
+in all five map styles, excluding sprite drawing and X11 uploads. Add
+`--compare b2dfd8b` to compare with the version before the 30 FPS optimization.
+It reports per-frame times and final-frame checksums, and saves the results in
+`build/performance/maze-benchmark/results.json`. This benchmark needs no desktop
+access and does not lock the screen.
 
 Meson is also supported when development libraries are installed through your
 distribution. `meson setup build/meson` and `meson compile -C build/meson` produce

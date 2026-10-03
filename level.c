@@ -213,8 +213,9 @@ static uint32_t shade(uint32_t pixel, double light) {
     r *= light;
     g *= light;
     b *= light;
-    return 0xff000000 | ((uint32_t)fmin(255, r) << 16) |
-           ((uint32_t)fmin(255, g) << 8) | (uint32_t)fmin(255, b);
+    /* Distance lighting only darkens these 8-bit channels. */
+    return 0xff000000 | ((uint32_t)r << 16) |
+           ((uint32_t)g << 8) | (uint32_t)b;
 }
 
 static double light_at(double distance) {
@@ -271,26 +272,8 @@ static void render(int height) {
     double plane_x = -forward_y * FOV_PLANE, plane_y = forward_x * FOV_PLANE;
     double focal = VIEW_WIDTH / (2 * FOV_PLANE);
     int horizon = height / 2;
-    for (int y = 0; y < height; y++) {
-        bool floor_side = y >= horizon;
-        double distance = focal * (floor_side ? EYE_HEIGHT : 1 - EYE_HEIGHT) /
-                          (abs(y - horizon) + 0.5);
-        double wx = camera_x + distance * (forward_x - plane_x);
-        double wy = camera_y + distance * (forward_y - plane_y);
-        double step_x = distance * plane_x * 2 / VIEW_WIDTH;
-        double step_y = distance * plane_y * 2 / VIEW_WIDTH;
-        double light = light_at(distance);
-        for (int x = 0; x < VIEW_WIDTH; x++, wx += step_x, wy += step_y) {
-            texture_t *texture = floor_side ? &floor_texture : &ceiling_texture;
-            /* MAP24's slime is a contained basin with a dry border in one
-             * room, using that map's rock walls and ceiling. */
-            if (floor_side && style->slime_room && wx >= 10 && wx < 13 && wy >= 10 && wy < 13)
-                texture = &slime[(int)(world_time * 2) % 3];
-            /* Doom flats repeat every 64 units; maze cells are 128 units. */
-            uint32_t pixel = sample(texture, wx * CELL_UNITS / 64, wy * CELL_UNITS / 64);
-            pixels[y * stride + x] = shade(pixel, light);
-        }
-    }
+    int wall_top[VIEW_WIDTH], wall_bottom[VIEW_WIDTH];
+    /* Draw walls first so hidden floor/ceiling pixels need no texture work. */
     for (int x = 0; x < VIEW_WIDTH; x++) {
         double screen_x = 2.0 * x / VIEW_WIDTH - 1;
         double ray_x = forward_x + plane_x * screen_x;
@@ -305,9 +288,32 @@ static void render(int height) {
         double u = hit.side ? camera_x + distance * ray_x : camera_y + distance * ray_y;
         if ((!hit.side && ray_x > 0) || (hit.side && ray_y < 0)) u = -u;
         double light = (hit.side ? 0.82 : 1) * light_at(distance);
-        for (int y = top < 0 ? 0 : top; y < height && y <= bottom; y++) {
+        wall_top[x] = top < 0 ? 0 : (int)top;
+        wall_bottom[x] = bottom >= height ? height - 1 : (int)bottom;
+        for (int y = wall_top[x]; y <= wall_bottom[x]; y++) {
             uint32_t pixel = sample(texture, u * CELL_UNITS / texture->width,
                                     (y - top) / wall_height * CELL_UNITS / texture->height);
+            pixels[y * stride + x] = shade(pixel, light);
+        }
+    }
+    for (int y = 0; y < height; y++) {
+        bool floor_side = y >= horizon;
+        double distance = focal * (floor_side ? EYE_HEIGHT : 1 - EYE_HEIGHT) /
+                          (abs(y - horizon) + 0.5);
+        double wx = camera_x + distance * (forward_x - plane_x);
+        double wy = camera_y + distance * (forward_y - plane_y);
+        double step_x = distance * plane_x * 2 / VIEW_WIDTH;
+        double step_y = distance * plane_y * 2 / VIEW_WIDTH;
+        double light = light_at(distance);
+        for (int x = 0; x < VIEW_WIDTH; x++, wx += step_x, wy += step_y) {
+            if (y >= wall_top[x] && y <= wall_bottom[x]) continue;
+            texture_t *texture = floor_side ? &floor_texture : &ceiling_texture;
+            /* MAP24's slime is a contained basin with a dry border in one
+             * room, using that map's rock walls and ceiling. */
+            if (floor_side && style->slime_room && wx >= 10 && wx < 13 && wy >= 10 && wy < 13)
+                texture = &slime[(int)(world_time * 2) % 3];
+            /* Doom flats repeat every 64 units; maze cells are 128 units. */
+            uint32_t pixel = sample(texture, wx * CELL_UNITS / 64, wy * CELL_UNITS / 64);
             pixels[y * stride + x] = shade(pixel, light);
         }
     }
