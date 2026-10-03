@@ -5,6 +5,7 @@
 #include <string.h>
 #include <cairo.h>
 #include "level.h"
+#include "assets.h"
 
 #define MAP_SIZE 25
 #define VIEW_WIDTH 416
@@ -87,10 +88,10 @@ typedef struct {
 static hit_t cast(double ray_x, double ray_y);
 
 static bool load_texture(texture_t *texture, const char *assets, const char *name) {
-    char path[4096];
-    snprintf(path, sizeof(path), "%s/level/%s.png", assets, name);
-    texture->surface = cairo_image_surface_create_from_png(path);
-    if (cairo_surface_status(texture->surface) != CAIRO_STATUS_SUCCESS) return false;
+    char path[64];
+    snprintf(path, sizeof(path), "level/%s.png", name);
+    texture->surface = assets_image(assets, path);
+    if (!texture->surface) return false;
     texture->width = cairo_image_surface_get_width(texture->surface);
     texture->height = cairo_image_surface_get_height(texture->surface);
     texture->stride = cairo_image_surface_get_stride(texture->surface) / 4;

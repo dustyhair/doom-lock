@@ -7,6 +7,7 @@ from pathlib import Path
 from PIL import Image, ImageChops
 
 root = Path(__file__).resolve().parents[1]
+binary = os.environ.get("DOOM_TEST_BINARY", str(root / "build/i3lock-doom"))
 output = root / "build/test-results"
 output.mkdir(parents=True, exist_ok=True)
 # The stub supplies both PAM services. Host policy validation has its own tests.
@@ -27,6 +28,10 @@ environment = dict(os.environ, DISPLAY=display, LD_PRELOAD=str(output / "pam-stu
                    DOOM_LOCK_ASSETS=str(root / "assets"))
 environment["DOOM_LOCK_PAM_DIR"] = str(output / "pam")
 environment.pop("XAUTHORITY", None)
+environment.pop("DOOM_LOCK_WAD", None)
+if os.environ.get("DOOM_TEST_WAD"):
+    environment["DOOM_LOCK_WAD"] = os.environ["DOOM_TEST_WAD"]
+    environment["DOOM_LOCK_ASSETS"] = str(output / "no-extracted-assets")
 
 
 def run(*command):
@@ -51,7 +56,7 @@ def start(mode):
     trace = output / f"{mode}.trace"
     trace.unlink(missing_ok=True)
     environment.update(DOOM_TEST_MODE=mode, DOOM_TEST_TRACE=str(trace))
-    process = subprocess.Popen([str(root / "build/i3lock-doom"), "-n", "-c", "080808"],
+    process = subprocess.Popen([binary, "-n", "-c", "080808"],
                                env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     wait_for(lambda: trace_lines()[:1] == ["empty"])
     assert process.poll() is None
@@ -298,7 +303,7 @@ try:
     trace = output / "daemon.trace"
     trace.unlink(missing_ok=True)
     environment.update(DOOM_TEST_MODE="fingerprint", DOOM_TEST_TRACE=str(trace))
-    process = subprocess.Popen([str(root / "build/i3lock-doom"), "-c", "080808"], env=environment)
+    process = subprocess.Popen([binary, "-c", "080808"], env=environment)
     process.wait(timeout=3)
     assert process.returncode == 0
     wait_for(lambda: trace_lines() == ["empty"])

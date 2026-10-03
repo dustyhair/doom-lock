@@ -1,8 +1,17 @@
 # Doom lock screen
 
 This local fork of i3lock 2.16 adds a moving Doom maze and 14 Doom II monster
-animations to the existing i3 lock menu. Images come from the installed DOOM2.WAD.
-Extracted game assets are ignored by Git.
+animations to the existing i3 lock menu. Content can come directly from a
+user-supplied Doom II-compatible WAD or from an extracted PNG folder. WADs and
+extracted game assets are ignored by Git; the executable contains no artwork.
+
+The WAD loader reads the palette, sprite patches, patch origins, wall texture
+definitions, and floor/ceiling flats into memory before the lock window opens.
+It produces the same cropped frames as PNG extraction, then releases the WAD
+buffer. There is no extraction cache or WAD I/O during animation. Both IWADs and
+complete standalone PWADs are accepted. The file must contain all required Doom
+II monster, BFG, face, and level texture resources; Doom I WADs and partial mod
+PWADs are not supported. The maze geometry is still generated.
 
 The camera backs through a generated maze of corridors and rooms at roughly
 one tile every three seconds, with smooth turns. It faces opposite its direction
@@ -98,22 +107,24 @@ Installed files:
 
 - `~/.local/bin/lock-screen.sh`, the launcher used by the Lock menu
 - `~/.local/bin/i3lock-doom`, the custom executable
-- `~/.local/share/doom-lock/sprites`, monster sprites and level textures
+- `~/.config/doom-lock/wad`, the path to a WAD in its original location
+- `~/.local/share/doom-lock/sprites`, optional extracted sprites and textures
 - `~/.local/share/doom-lock/pam`, the refreshed policy for password verification
 - `~/.local/share/doom-lock/prepare-pam.py`, the policy preparation helper
 - `~/.local/share/doom-lock/lock-screen.sh.before-doom-*`, the original launcher backup
 
 Source is in `~/Development/side_projects/doom-lock`. The custom locker and its
 user-local header build target Linux. No system executable or PAM file is replaced.
-If the custom binary or sprites cannot start, the launcher uses the original
+If the custom binary or content cannot load, the launcher uses the original
 system i3lock and its fingerprint startup shortcut.
 
 ## Rebuild and install
 
 The local build targets Debian/Ubuntu Linux. It requires Python 3, a C compiler,
 `apt`, `dpkg-deb`, and the installed runtime libraries for PAM, Cairo, libev,
-XCB including SHAPE, and xkbcommon. Asset extraction needs Pillow, available as
-`python3-pil`.
+XCB including SHAPE, and xkbcommon. Direct WAD loading needs no Pillow or game
+assets at build time. Optional PNG extraction and asset tests need Pillow,
+available as `python3-pil`.
 The tests also need `Xvfb`, `xdotool`, and ImageMagick's `import` command, available
 in the `xvfb`, `xdotool`, and `imagemagick` packages.
 
@@ -126,14 +137,57 @@ The local build uses these headers and the installed runtime libraries.
 ```sh
 cd ~/Development/side_projects/doom-lock
 python3 tools/bootstrap-deps.py
-python3 tools/extract-sprites.py \
-  "$HOME/Games/Heroic/DOOM + DOOM II/dosdoom/base/doom2/DOOM2.WAD" assets
 python3 tools/build-local.py
 python3 tests/test-pam.py
+python3 tests/test-assets.py
+python3 tools/install-local.py --wad /path/to/DOOM2.WAD
+```
+
+`--wad` saves an absolute path in `~/.config/doom-lock/wad`. It copies neither
+the WAD nor extracted artwork. Your installed game can stay in its original
+directory. `DOOM_LOCK_WAD=/path/to/DOOM2.WAD ~/.local/bin/lock-screen.sh`
+overrides the saved path for one lock. WAD content takes precedence over
+`DOOM_LOCK_ASSETS`. Unsupported or malformed content fails before input grabs;
+the launcher then uses system i3lock.
+
+To keep using extracted PNGs:
+
+```sh
+python3 tools/extract-sprites.py /path/to/DOOM2.WAD assets
 python3 tests/test-level.py
 python3 tests/test-lock.py
-python3 tools/install-local.py
+python3 tools/install-local.py --assets assets
 ```
+
+The explicit `--assets` installation removes a saved WAD selection. Existing
+local PNGs remain on disk when switching to WAD mode, but are not loaded.
+`--without-assets` installs only the binary, launcher, and PAM helper/policy,
+without changing an existing content selection. Use that option for a clean
+installation whose user will configure their own WAD later.
+
+WAD loading is enabled by default. `python3 tools/build-local.py --without-wad`
+or Meson's `-Dwad_assets=false` compiles out the WAD parser while retaining PNG
+support. Both builds use external content; neither embeds artwork. A source
+archive created with `git archive` includes tracked code and excludes the local
+ignored WADs, extracted assets, and build directory. Include `LICENSE` with
+code distributions and let each user supply their own content.
+
+The native asset tests generate synthetic artwork, check mirrored rotations,
+palette and origin handling, duplicate-lump precedence, and reject malformed
+directory, patch, flat, and texture data under ASan/UBSan. To compare every
+decoded image against your own extraction, use:
+
+```sh
+python3 tests/test-assets.py --wad /path/to/DOOM2.WAD --assets assets
+DOOM_TEST_WAD=/path/to/DOOM2.WAD python3 tests/test-level.py
+DOOM_TEST_WAD=/path/to/DOOM2.WAD python3 tests/test-lock.py
+python3 tests/test-install.py
+python3 tests/test-launcher.py
+```
+
+The WAD lock tests deliberately point the PNG source at a nonexistent folder.
+The installation tests use an isolated destination and verify that WAD mode
+stores only the path and installs no artwork.
 
 The PAM policy tests check supported alternatives and reject unsafe layouts
 before destination files change. The animation and input tests use their own

@@ -10,6 +10,12 @@ Successful unlock melts the
 scene away to reveal the live desktop. Password and fingerprint verification
 run independently.
 
+Load content directly from your own Doom II-compatible WAD with
+`python3 tools/install-local.py --wad /path/to/DOOM2.WAD`, or use extracted PNGs.
+The WAD is decoded in memory when locking. No game artwork is embedded in the
+binary or included in the source repository. WAD support can be disabled with
+`-Dwad_assets=false` in Meson or `--without-wad` in the local build script.
+
 See [DOOM-LOCK.md](DOOM-LOCK.md) for the local build, installation, and restore
 instructions, including dependency setup for a fresh checkout. Meson builds this
 fork as `i3lock-doom` and never installs system i3lock PAM files.

@@ -46,6 +46,7 @@ endif
 cdata.set('HAVE_STRNDUP', cc.has_function('strndup'))
 cdata.set('HAVE_MKDIRP', cc.has_function('mkdirp'))
 cdata.set('HAVE_EXPLICIT_BZERO', cc.has_function('explicit_bzero'))
+cdata.set10('DOOM_WAD_ASSETS', get_option('wad_assets'))
 
 # Instead of generating config.h directly, make vcs_tag generate it so that
 # @VCS_TAG@ is replaced.
@@ -87,6 +88,7 @@ xkbcommon_x11_dep = dependency('xkbcommon-x11', method: 'pkg-config')
 cairo_dep = dependency('cairo', version: '>=1.14.4', method: 'pkg-config')
 
 i3lock_srcs = [
+  'assets.c',
   'dpi.c',
   'doom.c',
   'melt.c',

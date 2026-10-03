@@ -59,9 +59,9 @@ for label, level_source in versions.items():
     subprocess.run([
         "cc", "-std=c11", "-D_GNU_SOURCE", "-O2", "-fno-strict-aliasing",
         '-DLEVEL_SOURCE="' + str(level_source) + '"',
-        "-I" + str(root / "include"), "-I" + str(headers),
+        "-I" + str(root / "include"), "-I" + str(root / "build"), "-I" + str(headers),
         "-I" + str(headers / "cairo"), "-I/usr/include/cairo",
-        str(source), "-o", str(binary), "-l:libcairo.so.2", "-lm",
+        str(source), str(root / "assets.c"), "-o", str(binary), "-l:libcairo.so.2", "-lm",
     ], check=True)
     rows = {}
     for seed in [1, 2, 3, 7, 16]:

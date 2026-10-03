@@ -9,6 +9,7 @@
 #include "doom.h"
 #include "melt.h"
 #include "level.h"
+#include "assets.h"
 #include "unlock_indicator.h"
 
 #define MAX_FRAMES 10
@@ -61,50 +62,50 @@ extern char fingerprint_status[160];
 
 bool doom_init(void) {
     const char *folder = getenv("DOOM_LOCK_ASSETS");
-    if (!folder) return false;
-    char path[4096];
-    snprintf(path, sizeof(path), "%s/player-dead.png", folder);
-    player_dead = cairo_image_surface_create_from_png(path);
-    if (cairo_surface_status(player_dead) != CAIRO_STATUS_SUCCESS) return false;
+    const char *wad_path = getenv("DOOM_LOCK_WAD");
+    if ((!folder || !folder[0]) && (!wad_path || !wad_path[0])) return false;
+    if (!assets_open(wad_path)) return false;
+    bool loaded = false;
+    char path[64];
+    player_dead = assets_image(folder, "player-dead.png");
+    if (!player_dead) goto done;
     for (int i = 0; i < 4; i++) {
-        snprintf(path, sizeof(path), "%s/bfg-%02d.png", folder, i);
-        bfg_blast[i] = cairo_image_surface_create_from_png(path);
-        if (cairo_surface_status(bfg_blast[i]) != CAIRO_STATUS_SUCCESS) return false;
+        snprintf(path, sizeof(path), "bfg-%02d.png", i);
+        bfg_blast[i] = assets_image(folder, path);
+        if (!bfg_blast[i]) goto done;
     }
     for (int i = 0; i < 2; i++) {
-        snprintf(path, sizeof(path), "%s/bfg-projectile-%02d.png", folder, i);
-        bfg_projectile[i] = cairo_image_surface_create_from_png(path);
-        if (cairo_surface_status(bfg_projectile[i]) != CAIRO_STATUS_SUCCESS) return false;
+        snprintf(path, sizeof(path), "bfg-projectile-%02d.png", i);
+        bfg_projectile[i] = assets_image(folder, path);
+        if (!bfg_projectile[i]) goto done;
     }
     for (int i = 0; i < monster_count; i++) {
-        snprintf(path, sizeof(path), "%s/%s/origin.txt", folder, monsters[i].id);
-        FILE *origin = fopen(path, "r");
-        if (!origin) return false;
-        int fields = fscanf(origin, "%d %d", &monsters[i].origin_x, &monsters[i].origin_y);
-        fclose(origin);
-        if (fields != 2 || monsters[i].origin_x < 0 || monsters[i].origin_x > 256 ||
-            monsters[i].origin_y < 0 || monsters[i].origin_y > 192) return false;
-        snprintf(path, sizeof(path), "%s/%s/idle.png", folder, monsters[i].id);
-        monsters[i].idle = cairo_image_surface_create_from_png(path);
-        if (cairo_surface_status(monsters[i].idle) != CAIRO_STATUS_SUCCESS) return false;
-        snprintf(path, sizeof(path), "%s/%s/pain.png", folder, monsters[i].id);
-        monsters[i].pain = cairo_image_surface_create_from_png(path);
-        if (cairo_surface_status(monsters[i].pain) != CAIRO_STATUS_SUCCESS) return false;
+        if (!assets_origin(folder, monsters[i].id, &monsters[i].origin_x, &monsters[i].origin_y)) goto done;
+        snprintf(path, sizeof(path), "%s/idle.png", monsters[i].id);
+        monsters[i].idle = assets_image(folder, path);
+        if (!monsters[i].idle) goto done;
+        snprintf(path, sizeof(path), "%s/pain.png", monsters[i].id);
+        monsters[i].pain = assets_image(folder, path);
+        if (!monsters[i].pain) goto done;
         for (int j = 0; j < monsters[i].walk_count; j++) {
-            snprintf(path, sizeof(path), "%s/%s/walk-%02d.png", folder, monsters[i].id, j);
-            monsters[i].walk[j] = cairo_image_surface_create_from_png(path);
-            if (cairo_surface_status(monsters[i].walk[j]) != CAIRO_STATUS_SUCCESS) return false;
+            snprintf(path, sizeof(path), "%s/walk-%02d.png", monsters[i].id, j);
+            monsters[i].walk[j] = assets_image(folder, path);
+            if (!monsters[i].walk[j]) goto done;
         }
         for (int j = 0; j < monsters[i].count; j++) {
-            snprintf(path, sizeof(path), "%s/%s/death-%02d.png", folder, monsters[i].id, j);
-            monsters[i].death[j] = cairo_image_surface_create_from_png(path);
-            if (cairo_surface_status(monsters[i].death[j]) != CAIRO_STATUS_SUCCESS) return false;
+            snprintf(path, sizeof(path), "%s/death-%02d.png", monsters[i].id, j);
+            monsters[i].death[j] = assets_image(folder, path);
+            if (!monsters[i].death[j]) goto done;
         }
     }
-    if (!level_init(folder)) return false;
+    if (!level_init(folder)) goto done;
     current = rand() % monster_count;
     enabled = true;
-    return true;
+    loaded = true;
+done:
+    /* Cairo surfaces own the decoded pixels; no WAD I/O occurs while locked. */
+    assets_close();
+    return loaded;
 }
 
 bool doom_enabled(void) { return enabled; }

@@ -11,5 +11,6 @@ tags
 
 /.build-deps
 /assets
+*.[wW][aA][dD]
 __pycache__/
 *.py[cod]

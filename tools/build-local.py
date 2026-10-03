@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Build against user-local headers and the installed runtime libraries."""
+import argparse
 import subprocess
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--without-wad", action="store_true", help="Build PNG support only")
+arguments = parser.parse_args()
 build = root / "build"
 build.mkdir(exist_ok=True)
 (build / "config.h").write_text('''#define I3LOCK_VERSION "2.16-doom"
 #define SYSCONFDIR "/etc"
 #define HAVE_STRNDUP 1
 #define HAVE_EXPLICIT_BZERO 1
-''')
+''' + f'#define DOOM_WAD_ASSETS {int(not arguments.without_wad)}\n')
 headers = root / ".build-deps/root/usr/include"
 if any(not (headers / name).is_file() for name in ["ev.h", "security/pam_appl.h", "xcb/shape.h"]):
     raise SystemExit("Missing local headers. Run: python3 tools/bootstrap-deps.py")
@@ -22,7 +26,7 @@ command = ["cc", "-std=c11", "-D_GNU_SOURCE", "-O2", "-Wall", "-Wextra",
            "-Wno-unused-parameter", "-Wno-missing-field-initializers", "-pthread",
            "-I" + str(build), "-I" + str(root / "include"), "-I" + str(headers),
            "-I" + str(headers / "cairo"), "-I/usr/include/cairo",
-           *[str(root / name) for name in ["dpi.c", "i3lock.c", "randr.c", "unlock_indicator.c", "xcb.c", "doom.c", "melt.c", "level.c"]],
+           *[str(root / name) for name in ["dpi.c", "i3lock.c", "randr.c", "unlock_indicator.c", "xcb.c", "doom.c", "melt.c", "level.c", "assets.c"]],
            "-o", str(build / "i3lock-doom"), "-lm", "-lrt",
            *["-l:lib" + library for library in libraries]]
 subprocess.run(command, check=True)

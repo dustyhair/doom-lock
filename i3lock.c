@@ -1369,8 +1369,8 @@ int main(int argc, char *argv[]) {
     free(image_path);
     free(image_raw_format);
 
-    if (!doom_init() && getenv("DOOM_LOCK_ASSETS")) {
-        errx(EXIT_FAILURE, "Could not load Doom sprites");
+    if (!doom_init() && (getenv("DOOM_LOCK_ASSETS") || getenv("DOOM_LOCK_WAD"))) {
+        errx(EXIT_FAILURE, "Could not load Doom content");
     }
 
     /* Pixmap on which the image is rendered to (if any) */

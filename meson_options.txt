@@ -1,1 +1,3 @@
 # -*- mode: meson -*-
+option('wad_assets', type: 'boolean', value: true,
+  description: 'Load a user-supplied Doom II-compatible WAD directly at runtime')
