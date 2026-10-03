@@ -190,6 +190,17 @@ xcb_window_t open_fullscreen_window(xcb_connection_t *conn, xcb_screen_t *scr, c
                         1,
                         &bypass_compositor);
 
+    /* A rectangular compositor shadow would cover the desktop exposed by
+     * the melt's shaped edges. Picom/Compton honor this per-window hint. */
+    xcb_intern_atom_reply_t *shadow_atom = xcb_intern_atom_reply(conn,
+        xcb_intern_atom(conn, 0, strlen("_COMPTON_SHADOW"), "_COMPTON_SHADOW"), NULL);
+    if (shadow_atom) {
+        const uint32_t no_shadow = 0;
+        xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, shadow_atom->atom,
+                            XCB_ATOM_CARDINAL, 32, 1, &no_shadow);
+        free(shadow_atom);
+    }
+
     /* Map the window (= make it visible) */
     xcb_map_window(conn, win);
 

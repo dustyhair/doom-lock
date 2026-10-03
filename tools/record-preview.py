@@ -10,7 +10,7 @@ output = root / "build/preview"
 output.mkdir(parents=True, exist_ok=True)
 stub = root / "build/test-results/pam-stub.so"
 read_fd, write_fd = os.pipe()
-server = subprocess.Popen(["Xvfb", "-displayfd", str(write_fd), "-screen", "0", "1280x1024x24", "-ac"],
+server = subprocess.Popen(["Xvfb", "-displayfd", str(write_fd), "-screen", "0", "1280x1024x24", "-ac", "-noreset"],
                           pass_fds=[write_fd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 os.close(write_fd)
 with os.fdopen(read_fd) as pipe:
@@ -21,6 +21,7 @@ environment.pop("XAUTHORITY", None)
 environment.pop("LD_PRELOAD", None)
 recorder = None
 locker = None
+desktop = None
 
 
 def key(*arguments):
@@ -44,6 +45,10 @@ def start(mode):
 
 
 try:
+    desktop = subprocess.Popen([str(root / "build/test-results/x11-probe"), "--desktop"],
+                               env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    if not desktop.stdout.readline().strip():
+        raise RuntimeError("Desktop fixture did not start")
     locker = start("password")
     log = (output / "ffmpeg.log").open("w")
     recorder = subprocess.Popen(["ffmpeg", "-y", "-f", "x11grab", "-framerate", "25",
@@ -60,8 +65,10 @@ try:
     key("type", "--clearmodifiers", "--delay", "230", "doom-test")
     key("key", "Return")
     locker.wait(timeout=5)
+    time.sleep(0.75)
     locker = start("fingerprint")
     locker.wait(timeout=5)
+    time.sleep(0.75)
     recorder.communicate(input=b"q", timeout=10)
     if recorder.returncode != 0:
         raise RuntimeError("Video recording failed; see ffmpeg.log")
@@ -72,5 +79,8 @@ finally:
         locker.wait(timeout=3)
     if recorder and recorder.poll() is None:
         recorder.communicate(input=b"q", timeout=10)
+    if desktop and desktop.poll() is None:
+        desktop.terminate()
+        desktop.wait(timeout=3)
     server.terminate()
     server.wait(timeout=3)

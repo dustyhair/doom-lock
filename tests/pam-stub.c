@@ -43,8 +43,10 @@ int pam_authenticate(pam_handle_t *handle, int flags) {
             trace_event("scan-timeout");
             return PAM_AUTH_ERR;
         }
-        usleep(strcmp(getenv("DOOM_TEST_MODE"), "fingerprint") == 0 ? 1000000 : 10000000);
-        if (strcmp(getenv("DOOM_TEST_MODE"), "fingerprint") != 0) return PAM_AUTH_ERR;
+        int fingerprint = strcmp(getenv("DOOM_TEST_MODE"), "fingerprint") == 0 ||
+                          strcmp(getenv("DOOM_TEST_MODE"), "fingerprint-during-failure") == 0;
+        usleep(fingerprint ? 1000000 : 10000000);
+        if (!fingerprint) return PAM_AUTH_ERR;
         if (conversation.conv(1, messages, &responses, conversation.appdata_ptr) != PAM_SUCCESS)
             return PAM_AUTH_ERR;
         free(responses);
@@ -62,7 +64,9 @@ int pam_authenticate(pam_handle_t *handle, int flags) {
     int queued = strcmp(getenv("DOOM_TEST_MODE"), "queued-edit") == 0 ||
                  strcmp(getenv("DOOM_TEST_MODE"), "queued-after-failure") == 0;
     usleep(queued ? 1000000 : 250000);
-    if (!matches && strcmp(getenv("DOOM_TEST_MODE"), "queued-after-failure") == 0)
+    if (!matches && (strcmp(getenv("DOOM_TEST_MODE"), "queued-after-failure") == 0 ||
+                     strcmp(getenv("DOOM_TEST_MODE"), "failure") == 0 ||
+                     strcmp(getenv("DOOM_TEST_MODE"), "fingerprint-during-failure") == 0))
         trace_event("denied");
     return matches ? PAM_SUCCESS : PAM_AUTH_ERR;
 }

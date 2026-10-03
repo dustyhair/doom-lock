@@ -11,8 +11,17 @@ Password success plays its death animation. Fingerprint success fires an origina
 BFG projectile that flies into the living monster's body, explodes with a green
 flash, and sends it through a fast death animation. The screen stays
 locked until authentication succeeds and the final animation finishes.
-A wrong password shows a persistent red YOU DIED screen with Doom's dead player
-face. Typing starts another attempt with a new monster.
+After the monster dies, a Doom-style column melt uncovers the live desktop
+behind the lock window. The strips start at staggered times, accelerate, and
+fall away over about 1.2 seconds. Keyboard and pointer grabs remain active until
+the melt finishes. This uses X11 SHAPE and works without a compositor. If SHAPE
+is unavailable, it melts to black before unlocking.
+The lock window requests no Picom/Compton shadow, so a rectangular shadow cannot
+dim the desktop exposed by the falling strips.
+A wrong password melts the current scene into a persistent red YOU DIED screen
+with Doom's dead player face. The window stays fully opaque during this failure
+transition. Typing cancels the failure melt and starts another attempt with a
+new monster. Successful fingerprint verification can interrupt a failure melt.
 Fingerprint verification starts automatically once the window is mapped and the
 daemon has forked. Enter with a typed password starts a separate password check
 immediately, while the fingerprint scan continues independently. Enter with no
@@ -57,7 +66,8 @@ system i3lock and its fingerprint startup shortcut.
 
 The local build targets Debian/Ubuntu Linux. It requires Python 3, a C compiler,
 `apt`, `dpkg-deb`, and the installed runtime libraries for PAM, Cairo, libev,
-XCB, and xkbcommon. Sprite extraction needs Pillow, available as `python3-pil`.
+XCB including SHAPE, and xkbcommon. Sprite extraction needs Pillow, available as
+`python3-pil`.
 The tests also need `Xvfb`, `xdotool`, and ImageMagick's `import` command, available
 in the `xvfb`, `xdotool`, and `imagemagick` packages.
 
@@ -85,8 +95,13 @@ during a ten-second scan, Backspace, Ctrl+U, queued input, incorrect passwords,
 fingerprint success and timeout, BFG flash, death screen and retry, Escape,
 walking and hit animations, multi-message PAM conversations, repeated restarts
 after fingerprint timeouts, queued edits after the failure screen appears, and
-the daemon fork used by the installed launcher. They do not verify the physical
-sensor or the user's actual credentials.
+the daemon fork used by the installed launcher. They also inspect the lock's
+bounding shape and input grabs, change the desktop during a success melt to
+check the live reveal, and test fingerprint success during a failure transition.
+They do not verify the physical sensor or the user's actual credentials.
+
+If Picom is installed, run `DOOM_TEST_PICOM=1 python3 tests/test-lock.py` to repeat
+the checks with compositor shadows and fading enabled on the isolated display.
 
 Meson is also supported when development libraries are installed through your
 distribution. `meson setup build/meson` and `meson compile -C build/meson` produce
@@ -102,3 +117,5 @@ Upstream sources:
 
 - https://github.com/i3/i3lock/tree/2.16
 - https://github.com/id-Software/DOOM/blob/master/linuxdoom-1.10/info.c
+- https://github.com/id-Software/DOOM/blob/master/linuxdoom-1.10/f_wipe.c
+- https://www.x.org/releases/X11R7.7/doc/xextproto/shape.html

@@ -648,6 +648,7 @@ static void handle_screen_resize(void) {
         return;
     }
 
+    free_bg_pixmap();
     last_resolution[0] = geom->width;
     last_resolution[1] = geom->height;
 

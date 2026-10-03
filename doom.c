@@ -7,6 +7,7 @@
 #include <cairo.h>
 #include <ev.h>
 #include "doom.h"
+#include "melt.h"
 #include "unlock_indicator.h"
 
 #define MAX_FRAMES 10
@@ -100,9 +101,15 @@ static void choose_monster(void) {
 }
 
 bool doom_failure_visible(void) { return failure; }
-void doom_denied(void) { failure = true; }
+void doom_denied(void) {
+    melt_begin(false);
+    failure = true;
+}
 void doom_verifying(void) {
-    if (failure) choose_monster();
+    if (failure) {
+        melt_cancel();
+        choose_monster();
+    }
     failure = false;
 }
 void doom_shot(void) {
@@ -113,6 +120,7 @@ void doom_shot(void) {
 }
 
 void doom_authenticated(bool fingerprint) {
+    melt_cancel();
     if (frame >= monsters[current].count - 1) choose_monster();
     if (frame < 0) frame = 0;
     authenticated = true;
@@ -156,7 +164,8 @@ static void tick(EV_P_ ev_timer *watcher, int events) {
             if (frame >= monsters[current].count - 1) {
                 frame = monsters[current].count - 1;
                 if (++corpse_ticks >= 3) {
-                    ev_break(loop, EVBREAK_ALL);
+                    if (melt_begin(true)) ev_timer_stop(loop, watcher);
+                    else ev_break(loop, EVBREAK_ALL);
                     return;
                 }
             }
@@ -169,7 +178,8 @@ static void tick(EV_P_ ev_timer *watcher, int events) {
             frame++;
         } else if (++corpse_ticks >= (authenticated ? 2 : 7)) {
             if (authenticated) {
-                ev_break(loop, EVBREAK_ALL);
+                if (melt_begin(true)) ev_timer_stop(loop, watcher);
+                else ev_break(loop, EVBREAK_ALL);
                 return;
             }
             choose_monster();

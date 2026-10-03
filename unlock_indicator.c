@@ -23,6 +23,7 @@
 #include "randr.h"
 #include "dpi.h"
 #include "doom.h"
+#include "melt.h"
 
 #define BUTTON_RADIUS 90
 #define BUTTON_SPACE (BUTTON_RADIUS + 5)
@@ -413,6 +414,8 @@ void draw_image(xcb_pixmap_t bg_pixmap, uint32_t *resolution) {
         cairo_fill(xcb_ctx);
     }
 
+    melt_draw(xcb_ctx);
+
     cairo_surface_destroy(xcb_output);
     cairo_surface_destroy(output);
     cairo_destroy(ctx);
@@ -421,12 +424,32 @@ void draw_image(xcb_pixmap_t bg_pixmap, uint32_t *resolution) {
 
 static xcb_pixmap_t bg_pixmap = XCB_NONE;
 
+cairo_surface_t *capture_lock_frame(void) {
+    if (bg_pixmap == XCB_NONE) return NULL;
+    cairo_surface_t *copy = cairo_image_surface_create(CAIRO_FORMAT_RGB24,
+        last_resolution[0], last_resolution[1]);
+    cairo_surface_t *source = cairo_xcb_surface_create(conn, bg_pixmap, vistype,
+        last_resolution[0], last_resolution[1]);
+    cairo_t *ctx = cairo_create(copy);
+    cairo_set_source_surface(ctx, source, 0, 0);
+    cairo_paint(ctx);
+    bool valid = cairo_status(ctx) == CAIRO_STATUS_SUCCESS;
+    cairo_destroy(ctx);
+    cairo_surface_destroy(source);
+    if (!valid || cairo_surface_status(copy) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(copy);
+        return NULL;
+    }
+    return copy;
+}
+
 /*
  * Releases the current background pixmap so that the next redraw_screen() call
  * will allocate a new one with the updated resolution.
  *
  */
 void free_bg_pixmap(void) {
+    melt_cancel();
     xcb_free_pixmap(conn, bg_pixmap);
     bg_pixmap = XCB_NONE;
 }
@@ -455,6 +478,7 @@ void redraw_screen(void) {
     /* XXX: Possible optimization: Only update the area in the middle of the
      * screen instead of the whole screen. */
     xcb_clear_area(conn, 0, win, 0, 0, last_resolution[0], last_resolution[1]);
+    melt_shape();
     xcb_flush(conn);
 }
 

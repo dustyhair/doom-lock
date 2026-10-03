@@ -78,6 +78,7 @@ xcb_dep = dependency('xcb', method: 'pkg-config')
 xcb_xkb_dep = dependency('xcb-xkb', method: 'pkg-config')
 xcb_xinerama_dep = dependency('xcb-xinerama', method: 'pkg-config')
 xcb_randr_dep = dependency('xcb-randr', method: 'pkg-config')
+xcb_shape_dep = dependency('xcb-shape', method: 'pkg-config')
 xcb_image_dep = dependency('xcb-image', method: 'pkg-config')
 xcb_util_dep = dependency('xcb-util', method: 'pkg-config')
 xcb_util_xrm_dep = dependency('xcb-xrm', method: 'pkg-config')
@@ -88,6 +89,7 @@ cairo_dep = dependency('cairo', version: '>=1.14.4', method: 'pkg-config')
 i3lock_srcs = [
   'dpi.c',
   'doom.c',
+  'melt.c',
   'i3lock.c',
   'randr.c',
   'unlock_indicator.c',
@@ -109,6 +111,7 @@ i3lock_deps = [
   xcb_xkb_dep,
   xcb_xinerama_dep,
   xcb_randr_dep,
+  xcb_shape_dep,
   xcb_image_dep,
   xcb_util_dep,
   xcb_util_xrm_dep,

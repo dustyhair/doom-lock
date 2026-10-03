@@ -2,6 +2,7 @@
 #define _UNLOCK_INDICATOR_H
 
 #include <xcb/xcb.h>
+#include <cairo.h>
 
 typedef enum {
     STATE_STARTED = 0,           /* default state */
@@ -22,6 +23,7 @@ typedef enum {
 } auth_state_t;
 
 void free_bg_pixmap(void);
+cairo_surface_t *capture_lock_frame(void);
 void draw_image(xcb_pixmap_t bg_pixmap, uint32_t* resolution);
 void redraw_screen(void);
 void clear_indicator(void);

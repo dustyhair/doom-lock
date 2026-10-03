@@ -9,7 +9,7 @@ from pathlib import Path
 PACKAGES = [
     "libcairo2-dev", "libev-dev", "libfontconfig-dev", "libfreetype-dev",
     "libpam0g-dev", "libpixman-1-dev", "libpng-dev", "libxcb-image0-dev",
-    "libxcb-randr0-dev", "libxcb-render0-dev", "libxcb-shm0-dev",
+    "libxcb-randr0-dev", "libxcb-render0-dev", "libxcb-shm0-dev", "libxcb-shape0-dev",
     "libxcb-util-dev", "libxcb-xinerama0-dev", "libxcb-xkb-dev",
     "libxcb-xrm-dev", "libxcb1-dev", "libxkbcommon-dev", "libxkbcommon-x11-dev",
 ]
