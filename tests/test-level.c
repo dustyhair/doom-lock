@@ -11,6 +11,7 @@ auth_state_t auth_state = STATE_AUTH_IDLE;
 char *modifier_string;
 int input_position;
 bool password_verifying;
+char fingerprint_status[160];
 void redraw_screen(void) {}
 bool melt_begin(bool reveal_desktop) { return false; }
 void melt_cancel(void) {}

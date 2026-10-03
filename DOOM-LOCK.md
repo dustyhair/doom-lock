@@ -56,10 +56,15 @@ A wrong password melts the current scene into a persistent red YOU DIED screen
 with Doom's dead player face. The window stays fully opaque during this failure
 transition. Typing cancels the failure melt and starts another attempt with a
 new monster. Successful fingerprint verification can interrupt a failure melt.
-Fingerprint verification starts automatically once the window is mapped and the
-daemon has forked. Enter with a typed password starts a separate password check
-immediately, while the fingerprint scan continues independently. Enter with no
-password starts a fingerprint check if one is not already running.
+Fingerprint verification starts immediately once the window is mapped and the
+daemon has forked, even if typing has already started. Reader instructions and
+scan errors appear below the password status, including which enrolled finger
+to use. A failed scan automatically starts another attempt one second after PAM
+returns, while preserving typed passwords and the death screen. Only one scan
+can run at a time, and retries stop as soon as authentication succeeds.
+Enter with a typed password starts a separate password check immediately, while
+the fingerprint scan continues independently. Enter with no password starts a
+fingerprint check if one is not already running.
 
 Fingerprint PAM uses `/etc/pam.d/i3lock`, which includes the existing login stack.
 For password PAM, the launcher validates the current system policy and copies it
@@ -72,7 +77,9 @@ rules, other authentication layouts, and additional factors cause the launcher
 to fall back to the original locker. Validation finishes before the existing
 local policy copy changes. The copy preserves password rules, relative jump
 destinations, and the system's failure delay, which is three seconds here.
-No system PAM file is edited.
+No system PAM file is edited. A background fingerprint worker refuses hidden
+password prompts from the system stack. It cannot fall back to blank Unix/SSS
+password attempts or use the password being typed for the separate worker.
 
 The workers have separate PAM handles and memory-locked password snapshots.
 The X11 thread renders and accepts input while verification runs. Each snapshot
@@ -135,6 +142,9 @@ bounding shape and input grabs, change the desktop during a success melt to
 check the live reveal, test fingerprint success during a failure transition,
 and check that the colorful maze moves independently of the monster animation.
 They do not verify the physical sensor or the user's actual credentials.
+The scan tests also check automatic rearming with partial password input,
+success on a later automatic scan, no password fallback from the fingerprint
+worker, and retries while the persistent failure screen is visible.
 
 The maze tests compile the renderer with AddressSanitizer and
 UndefinedBehaviorSanitizer. All five map styles each run 23 simulated minutes

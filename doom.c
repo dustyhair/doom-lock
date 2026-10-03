@@ -52,6 +52,7 @@ extern auth_state_t auth_state;
 extern char *modifier_string;
 extern int input_position;
 extern bool password_verifying;
+extern char fingerprint_status[160];
 
 bool doom_init(void) {
     const char *folder = getenv("DOOM_LOCK_ASSETS");
@@ -245,7 +246,9 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
         cairo_paint(ctx);
         cairo_restore(ctx);
         centered_text(ctx, "ACCESS DENIED", center, middle + 145, 20, 0.8, 0.6, 0.5);
-        centered_text(ctx, "TYPE TO TRY AGAIN / ENTER TO SCAN FINGER", center, middle + 185, 14, 0.65, 0.45, 0.35);
+        centered_text(ctx, "TYPE TO TRY AGAIN / OR SCAN FINGER", center, middle + 185, 14, 0.65, 0.45, 0.35);
+        if (fingerprint_status[0])
+            centered_text(ctx, fingerprint_status, center, middle + 220, 13, 0.7, 0.6, 0.5);
         cairo_restore(ctx);
         return;
     }
@@ -308,7 +311,7 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
     cairo_set_source_rgba(ctx, 0.02, 0.025, 0.03, 0.88);
     cairo_rectangle(ctx, x, y + height - 100, width, 100);
     cairo_fill(ctx);
-    centered_text(ctx, monster->name, center, y + height - 72, 14, 0.85, 0.65, 0.38);
+    centered_text(ctx, monster->name, center, y + height - 80, 14, 0.85, 0.65, 0.38);
     const char *status = "SCAN FINGER OR TYPE PASSWORD + ENTER";
     if (authenticated) status = bfg_kill ? "BFG 9000 / ACCESS GRANTED" : "ACCESS GRANTED";
     else if (auth_state == STATE_AUTH_VERIFY)
@@ -318,9 +321,11 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
     else if (auth_state == STATE_I3LOCK_LOCK_FAILED) status = "COULD NOT LOCK";
     if (!authenticated && !failure && input_position > 0)
         status = "PASSWORD ENTERED / PRESS ENTER";
-    centered_text(ctx, status, center, y + height - 43, 15,
+    centered_text(ctx, status, center, y + height - 55, 15,
                   authenticated ? 0.35 : 0.80, authenticated ? 0.90 : 0.85, 0.70);
+    if (!authenticated && fingerprint_status[0])
+        centered_text(ctx, fingerprint_status, center, y + height - 30, 13, 0.7, 0.8, 0.7);
     if (modifier_string)
-        centered_text(ctx, modifier_string, center, y + height - 17, 13, 0.9, 0.55, 0.25);
+        centered_text(ctx, modifier_string, center, y + height - 10, 11, 0.9, 0.55, 0.25);
     cairo_restore(ctx);
 }

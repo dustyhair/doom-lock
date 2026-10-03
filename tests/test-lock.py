@@ -250,19 +250,50 @@ try:
     print("PASS: typing on the failure screen preserves the queued retry without another Enter")
 
     process = start("fingerprint-restart")
+    run("xdotool", "type", "--delay", "5", "doom-tes")
     for completed_scans in range(1, 4):
         wait_for(lambda: trace_lines().count("scan-timeout") == completed_scans)
         assert trace_lines().count("empty") == completed_scans
         assert process.poll() is None, "Fingerprint timeout unlocked the screen"
         time.sleep(0.1)
         if completed_scans < 3:
-            run("xdotool", "key", "Return")
             wait_for(lambda: trace_lines().count("empty") == completed_scans + 1)
-            run("xdotool", "key", "Return")
-            assert trace_lines().count("empty") == completed_scans + 1, "Enter started overlapping scans"
-    process.terminate()
+            assert trace_lines().count("scan-timeout") == completed_scans, "Overlapping scan started"
+    run("xdotool", "type", "t")
+    run("xdotool", "key", "Return")
+    wait_for(lambda: "match" in trace_lines(), timeout=0.8)
+    process.wait(timeout=5)
+    assert process.returncode == 0
+    assert trace_lines().count("empty") == 3, "Scan restarted during an authenticated animation"
+    assert "unsafe-fingerprint-password-fallback" not in trace_lines(), "Scan attempted password fallback"
+    print("PASS: scans retry automatically, preserve partial passwords, and stop after success")
+
+    process = start("fingerprint-late-success")
+    wait_for(lambda: trace_lines().count("empty") == 3)
+    assert trace_lines().count("scan-timeout") == 2
+    assert shape_and_grabs() == (1, 1280 * 1024, 1, 1), "Failed scans unlocked the screen"
+    run("xdotool", "key", "Return")
+    time.sleep(0.1)
+    assert trace_lines().count("empty") == 3, "Enter started an overlapping scan"
+    process.wait(timeout=6)
+    assert process.returncode == 0
+    print("PASS: fingerprint succeeds on a later automatic scan without overlapping workers")
+
+    process = start("fingerprint-retry-during-failure")
+    run("xdotool", "type", "--delay", "5", "wrong")
+    run("xdotool", "key", "Return")
+    wait_for(lambda: "denied" in trace_lines())
+    wait_for(lambda: trace_lines().count("empty") >= 3)
+    death = screenshot("death-screen-scanning.png")
+    red, green, blue = death.getpixel((10, 10))
+    assert red > green * 4 and red > blue * 4, "Automatic scan cleared the death screen"
+    assert shape_and_grabs() == (1, 1280 * 1024, 1, 1), "Automatic scan exposed the desktop"
+    run("xdotool", "type", "--delay", "5", "doom-test")
+    run("xdotool", "key", "Return")
+    wait_for(lambda: "match" in trace_lines())
     process.wait(timeout=3)
-    print("PASS: consecutive empty Enter presses restart timed-out scans without overlapping workers")
+    assert process.returncode == 0
+    print("PASS: background fingerprint retries preserve the death screen and allow password retry")
 
     trace = output / "daemon.trace"
     trace.unlink(missing_ok=True)
