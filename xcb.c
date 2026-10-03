@@ -35,13 +35,13 @@ void _init_net_wm_bypass_compositor(xcb_connection_t *conn) {
         /* already initialized */
         return;
     }
-    xcb_generic_error_t *err;
+    xcb_generic_error_t *err = NULL;
     xcb_intern_atom_reply_t *atom_reply = xcb_intern_atom_reply(
         conn,
         xcb_intern_atom(conn, 0, strlen("_NET_WM_BYPASS_COMPOSITOR"), "_NET_WM_BYPASS_COMPOSITOR"),
         &err);
     if (atom_reply == NULL) {
-        fprintf(stderr, "X11 Error %d\n", err->error_code);
+        fprintf(stderr, "X11 Error %d\n", err ? err->error_code : -1);
         free(err);
         return;
     }
@@ -193,7 +193,7 @@ xcb_window_t open_fullscreen_window(xcb_connection_t *conn, xcb_screen_t *scr, c
     /* A rectangular compositor shadow would cover the desktop exposed by
      * the melt's shaped edges. Picom/Compton honor this per-window hint. */
     xcb_intern_atom_reply_t *shadow_atom = xcb_intern_atom_reply(conn,
-        xcb_intern_atom(conn, 0, strlen("_COMPTON_SHADOW"), "_COMPTON_SHADOW"), NULL);
+                                                                 xcb_intern_atom(conn, 0, strlen("_COMPTON_SHADOW"), "_COMPTON_SHADOW"), NULL);
     if (shadow_atom) {
         const uint32_t no_shadow = 0;
         xcb_change_property(conn, XCB_PROP_MODE_REPLACE, win, shadow_atom->atom,
@@ -387,13 +387,13 @@ void _init_net_active_window(xcb_connection_t *conn) {
         /* already initialized */
         return;
     }
-    xcb_generic_error_t *err;
+    xcb_generic_error_t *err = NULL;
     xcb_intern_atom_reply_t *atom_reply = xcb_intern_atom_reply(
         conn,
         xcb_intern_atom(conn, 0, strlen("_NET_ACTIVE_WINDOW"), "_NET_ACTIVE_WINDOW"),
         &err);
     if (atom_reply == NULL) {
-        fprintf(stderr, "X11 Error %d\n", err->error_code);
+        fprintf(stderr, "X11 Error %d\n", err ? err->error_code : -1);
         free(err);
         return;
     }

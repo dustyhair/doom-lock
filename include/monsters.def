@@ -1,0 +1,17 @@
+/* id, display name, WAD prefix, death frames, walk frames, pain frame, hovering
+ * Normal animation sequences from id Software's linuxdoom-1.10/info.c.
+ * Shared by the native loader, renderer, and optional Python extractor. */
+MONSTER("zombieman", "ZOMBIEMAN", "POSS", "HIJKL", "ABCD", "G", 0)
+MONSTER("shotgun-guy", "SHOTGUN GUY", "SPOS", "HIJKL", "ABCD", "G", 0)
+MONSTER("imp", "IMP", "TROO", "IJKLM", "ABCD", "H", 0)
+MONSTER("demon", "DEMON", "SARG", "IJKLMN", "ABCD", "H", 0)
+MONSTER("cacodemon", "CACODEMON", "HEAD", "GHIJKL", "A", "E", 1)
+MONSTER("baron", "BARON OF HELL", "BOSS", "IJKLMNO", "ABCD", "H", 0)
+MONSTER("hell-knight", "HELL KNIGHT", "BOS2", "IJKLMNO", "ABCD", "H", 0)
+MONSTER("revenant", "REVENANT", "SKEL", "LMNOPQ", "ABCDEF", "L", 0)
+MONSTER("mancubus", "MANCUBUS", "FATT", "KLMNOPQRST", "ABCDEF", "J", 0)
+MONSTER("chaingunner", "CHAINGUNNER", "CPOS", "HIJKLMN", "ABCD", "G", 0)
+MONSTER("arachnotron", "ARACHNOTRON", "BSPI", "JKLMNOP", "ABCDEF", "I", 0)
+MONSTER("lost-soul", "LOST SOUL", "SKUL", "FGHIJK", "AB", "E", 1)
+MONSTER("pain-elemental", "PAIN ELEMENTAL", "PAIN", "HIJKLM", "ABC", "G", 1)
+MONSTER("cyberdemon", "CYBERDEMON", "CYBR", "HIJKLMNOP", "ABCD", "G", 0)

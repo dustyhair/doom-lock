@@ -21,12 +21,6 @@
 #include <err.h>
 #include <errno.h>
 #include <assert.h>
-#include <pthread.h>
-#ifdef __OpenBSD__
-#include <bsd_auth.h>
-#else
-#include <security/pam_appl.h>
-#endif
 #include <getopt.h>
 #include <ev.h>
 #include <sys/mman.h>
@@ -48,6 +42,7 @@
 #include "randr.h"
 #include "dpi.h"
 #include "doom.h"
+#include "auth.h"
 
 #define TSTAMP_N_SECS(n) (n * 1.0)
 #define TSTAMP_N_MINS(n) (60 * TSTAMP_N_SECS(n))
@@ -64,23 +59,11 @@ uint32_t last_resolution[2];
 xcb_window_t win;
 static xcb_cursor_t cursor;
 int input_position = 0;
-static char password[512];
-typedef struct {
-    pam_handle_t *handle;
-    pthread_t thread;
-    ev_async completed;
-    bool pending, used_password;
-    int result;
-    char password[512];
-} auth_attempt_t;
-static auth_attempt_t fingerprint_auth, password_auth;
+static char password[AUTH_PASSWORD_SIZE];
 bool password_verifying;
 static bool unlocked;
 static ev_timer fingerprint_start;
-char fingerprint_status[160];
-static char fingerprint_notice[160];
-static pthread_mutex_t fingerprint_notice_mutex = PTHREAD_MUTEX_INITIALIZER;
-static ev_async fingerprint_updates;
+char fingerprint_status[AUTH_NOTICE_SIZE];
 static void fingerprint_start_cb(EV_P_ ev_timer *watcher, int events);
 static bool beep = false;
 bool debug_mode = false;
@@ -113,7 +96,7 @@ bool ignore_empty_password = false;
 bool skip_repeated_empty_password = false;
 
 /* isutf, u8_dec © 2005 Jeff Bezanson, public domain */
-#define isutf(c) (((c)&0xC0) != 0x80)
+#define isutf(c) (((c) & 0xC0) != 0x80)
 
 /*
  * Decrements i to point to the previous unicode glyph
@@ -152,6 +135,7 @@ static bool load_keymap(void) {
         xkb_x11_state_new_from_device(new_keymap, conn, device_id);
     if (new_state == NULL) {
         fprintf(stderr, "[i3lock] xkb_x11_state_new_from_device failed\n");
+        xkb_keymap_unref(new_keymap);
         return false;
     }
 
@@ -289,46 +273,34 @@ static void discard_passwd_cb(EV_P_ ev_timer *w, int revents) {
     STOP_TIMER(discard_passwd_timeout);
 }
 
-/* Each worker owns a separate PAM handle and immutable password snapshot. */
-static void *authenticate_worker(void *context) {
-    auth_attempt_t *attempt = context;
-    attempt->used_password = false;
-    attempt->result = pam_authenticate(attempt->handle, 0);
-    if (attempt->result == PAM_SUCCESS) {
-        pam_setcred(attempt->handle, PAM_REFRESH_CRED);
+static void fingerprint_notice_received(const char *message) {
+    if (unlocked) {
+        return;
     }
-    explicit_bzero(attempt->password, sizeof(attempt->password));
-    ev_async_send(main_loop, &attempt->completed);
-    return NULL;
-}
-
-static void fingerprint_update_cb(EV_P_ ev_async *watcher, int events) {
-    if (unlocked || !fingerprint_auth.pending) return;
-    pthread_mutex_lock(&fingerprint_notice_mutex);
-    memcpy(fingerprint_status, fingerprint_notice, sizeof(fingerprint_status));
-    pthread_mutex_unlock(&fingerprint_notice_mutex);
+    snprintf(fingerprint_status, sizeof(fingerprint_status), "%s", message);
     redraw_screen();
 }
 
 static void schedule_fingerprint_scan(double delay) {
-    if (unlocked || !doom_enabled()) return;
+    if (unlocked || !doom_enabled()) {
+        return;
+    }
     ev_timer_stop(main_loop, &fingerprint_start);
     ev_timer_init(&fingerprint_start, fingerprint_start_cb, delay, 0);
     ev_timer_start(main_loop, &fingerprint_start);
 }
 
-static bool launch_auth_worker(auth_attempt_t *attempt) {
-    attempt->pending = true;
-    if (attempt == &fingerprint_auth) {
+static bool launch_auth_worker(auth_channel_t channel, const char *snapshot) {
+    if (channel == AUTH_FINGERPRINT) {
         ev_timer_stop(main_loop, &fingerprint_start);
         snprintf(fingerprint_status, sizeof(fingerprint_status), "STARTING FINGERPRINT SCANNER");
     } else {
         password_verifying = true;
     }
-    if (pthread_create(&attempt->thread, NULL, authenticate_worker, attempt) == 0) return true;
-    attempt->pending = false;
-    explicit_bzero(attempt->password, sizeof(attempt->password));
-    if (attempt == &fingerprint_auth) {
+    if (auth_submit(channel, snapshot)) {
+        return true;
+    }
+    if (channel == AUTH_FINGERPRINT) {
         snprintf(fingerprint_status, sizeof(fingerprint_status), "SCANNER UNAVAILABLE / RETRYING");
         schedule_fingerprint_scan(1.0);
     } else {
@@ -337,13 +309,14 @@ static bool launch_auth_worker(auth_attempt_t *attempt) {
     return false;
 }
 
-static void auth_completed_cb(EV_P_ ev_async *watcher, int events) {
-    auth_attempt_t *attempt = watcher->data;
-    pthread_join(attempt->thread, NULL);
-    attempt->pending = false;
-    if (attempt == &password_auth) password_verifying = false;
-    if (unlocked) return;
-    if (attempt->result == PAM_SUCCESS) {
+static void auth_completed(auth_channel_t channel, bool success) {
+    if (channel == AUTH_PASSWORD) {
+        password_verifying = false;
+    }
+    if (unlocked) {
+        return;
+    }
+    if (success) {
         unlocked = true;
         ev_timer_stop(main_loop, &fingerprint_start);
         fingerprint_status[0] = '\0';
@@ -352,16 +325,18 @@ static void auth_completed_cb(EV_P_ ev_async *watcher, int events) {
         STOP_TIMER(discard_passwd_timeout);
         STOP_TIMER(clear_auth_wrong_timeout);
         if (doom_enabled()) {
-            doom_authenticated(attempt == &fingerprint_auth && !attempt->used_password);
+            doom_authenticated(channel == AUTH_FINGERPRINT);
             redraw_screen();
         } else {
             ev_break(main_loop, EVBREAK_ALL);
         }
         return;
     }
-    if (attempt == &fingerprint_auth) {
-        DEBUG("fingerprint authentication ended with PAM result %d; scheduling another scan\n", attempt->result);
-        if (!password_auth.pending && !doom_failure_visible()) auth_state = STATE_AUTH_IDLE;
+    if (channel == AUTH_FINGERPRINT) {
+        DEBUG("fingerprint authentication ended; scheduling another scan\n");
+        if (!auth_pending(AUTH_PASSWORD) && !doom_failure_visible()) {
+            auth_state = STATE_AUTH_IDLE;
+        }
         snprintf(fingerprint_status, sizeof(fingerprint_status), "SCAN DID NOT MATCH / RETRYING");
         schedule_fingerprint_scan(1.0);
         redraw_screen();
@@ -369,7 +344,9 @@ static void auth_completed_cb(EV_P_ ev_async *watcher, int events) {
     }
     auth_state = STATE_AUTH_WRONG;
     doom_denied();
-    if (failed_attempts < 999) failed_attempts++;
+    if (failed_attempts < 999) {
+        failed_attempts++;
+    }
     redraw_screen();
     ev_now_update(main_loop);
     START_TIMER(clear_auth_wrong_timeout, TSTAMP_N_SECS(2), clear_auth_wrong);
@@ -381,20 +358,30 @@ static void auth_completed_cb(EV_P_ ev_async *watcher, int events) {
 }
 
 static void input_done(void) {
-    auth_attempt_t *attempt = input_position > 0 ? &password_auth : &fingerprint_auth;
-    if (attempt->pending) {
-        if (input_position > 0) retry_verification = true;
+    /* Never create a worker before the daemon fork. Keep an early Enter queued
+     * until MapNotify has completed the fork and restored memory locks. */
+    if (!dont_fork) {
+        retry_verification = true;
+        return;
+    }
+    auth_channel_t channel = input_position > 0 ? AUTH_PASSWORD : AUTH_FINGERPRINT;
+    if (auth_pending(channel)) {
+        if (input_position > 0) {
+            retry_verification = true;
+        }
         return;
     }
     STOP_TIMER(clear_auth_wrong_timeout);
     STOP_TIMER(discard_passwd_timeout);
-    if (attempt == &password_auth) retry_verification = false;
+    if (channel == AUTH_PASSWORD) {
+        retry_verification = false;
+    }
     auth_state = STATE_AUTH_VERIFY;
     unlock_state = STATE_STARTED;
-    memcpy(attempt->password, password, sizeof(attempt->password));
-    clear_input();
     doom_verifying();
-    if (!launch_auth_worker(attempt) && attempt == &password_auth) {
+    bool started = launch_auth_worker(channel, password);
+    clear_input();
+    if (!started && channel == AUTH_PASSWORD) {
         auth_state = STATE_AUTH_WRONG;
         doom_denied();
     }
@@ -408,13 +395,15 @@ static void fingerprint_start_cb(EV_P_ ev_timer *watcher, int events) {
         schedule_fingerprint_scan(0.05);
         return;
     }
-    if (unlocked || fingerprint_auth.pending) return;
+    if (unlocked || auth_pending(AUTH_FINGERPRINT)) {
+        return;
+    }
     /* A scan has no password snapshot. Starting it must preserve typed input,
      * queued password retries, and the persistent failure screen. */
-    explicit_bzero(fingerprint_auth.password, sizeof(fingerprint_auth.password));
-    if (!password_auth.pending && auth_state != STATE_AUTH_WRONG && !doom_failure_visible())
+    if (!auth_pending(AUTH_PASSWORD) && auth_state != STATE_AUTH_WRONG && !doom_failure_visible()) {
         auth_state = STATE_AUTH_VERIFY;
-    launch_auth_worker(&fingerprint_auth);
+    }
+    launch_auth_worker(AUTH_FINGERPRINT, "");
     redraw_screen();
 }
 
@@ -442,7 +431,9 @@ static bool skip_without_validation(void) {
  *
  */
 static void handle_key_press(xcb_key_press_event_t *event) {
-    if (unlocked) return;
+    if (unlocked) {
+        return;
+    }
     xkb_keysym_t ksym;
     char buffer[128];
     int n;
@@ -490,7 +481,9 @@ static void handle_key_press(xcb_key_press_event_t *event) {
 
             /* Empty Enter requests a scan, not an empty password attempt. */
             if (input_position == 0 && doom_enabled()) {
-                if (!fingerprint_auth.pending) input_done();
+                if (!auth_pending(AUTH_FINGERPRINT)) {
+                    input_done();
+                }
                 return;
             }
 
@@ -561,10 +554,6 @@ static void handle_key_press(xcb_key_press_event_t *event) {
             return;
     }
 
-    if ((input_position + 8) >= (int)sizeof(password)) {
-        return;
-    }
-
 #if 0
     /* FIXME: handle all of these? */
     printf("is_keypad_key = %d\n", xcb_is_keypad_key(sym));
@@ -576,7 +565,9 @@ static void handle_key_press(xcb_key_press_event_t *event) {
     printf("xcb_is_modifier_key = %d\n", xcb_is_modifier_key(sym));
 #endif
 
-    if (n < 2) {
+    /* Compose sequences may expand to many bytes. Both the source buffer and
+     * the destination must fit, including the eventual NUL terminator. */
+    if (n < 2 || n > (int)sizeof(buffer) || input_position + n > (int)sizeof(password)) {
         return;
     }
 
@@ -586,7 +577,9 @@ static void handle_key_press(xcb_key_press_event_t *event) {
     if (doom_failure_visible()) {
         /* This timer also submits an already queued retry. Keep that promise
          * while allowing edits to the queued password after the failure. */
-        if (!retry_verification) STOP_TIMER(clear_auth_wrong_timeout);
+        if (!retry_verification) {
+            STOP_TIMER(clear_auth_wrong_timeout);
+        }
         auth_state = STATE_AUTH_IDLE;
     }
     doom_shot();
@@ -893,69 +886,6 @@ static bool verify_png_image(const char *image_path) {
     return true;
 }
 
-#ifndef __OpenBSD__
-/*
- * Answer password requests and forward fingerprint reader messages to the UI.
- *
- */
-static int conv_callback(int num_msg, const struct pam_message **msg,
-                         struct pam_response **resp, void *appdata_ptr) {
-    if (num_msg == 0) {
-        return 1;
-    }
-
-    /* PAM expects an array of responses, one for each message */
-    if ((*resp = calloc(num_msg, sizeof(struct pam_response))) == NULL) {
-        perror("calloc");
-        return 1;
-    }
-
-    for (int c = 0; c < num_msg; c++) {
-        auth_attempt_t *attempt = appdata_ptr;
-        if (msg[c]->msg_style != PAM_PROMPT_ECHO_OFF &&
-            msg[c]->msg_style != PAM_PROMPT_ECHO_ON) {
-            if (attempt == &fingerprint_auth && msg[c]->msg &&
-                (msg[c]->msg_style == PAM_TEXT_INFO || msg[c]->msg_style == PAM_ERROR_MSG)) {
-                pthread_mutex_lock(&fingerprint_notice_mutex);
-                size_t i = 0;
-                for (; i < sizeof(fingerprint_notice) - 1 && msg[c]->msg[i]; i++) {
-                    unsigned char character = msg[c]->msg[i];
-                    fingerprint_notice[i] = character >= 32 && character < 127 ? character : ' ';
-                }
-                fingerprint_notice[i] = '\0';
-                pthread_mutex_unlock(&fingerprint_notice_mutex);
-                ev_async_send(main_loop, &fingerprint_updates);
-            }
-            continue;
-        }
-
-        if (msg[c]->msg_style == PAM_PROMPT_ECHO_OFF) attempt->used_password = true;
-        if (attempt == &fingerprint_auth && msg[c]->msg_style == PAM_PROMPT_ECHO_OFF) {
-            /* A background scan must not fall back to blank password attempts
-             * through Unix/SSS, nor borrow the password currently being typed. */
-            for (int i = 0; i < num_msg; i++) {
-                if ((*resp)[i].resp) {
-                    explicit_bzero((*resp)[i].resp, strlen((*resp)[i].resp));
-                    free((*resp)[i].resp);
-                }
-            }
-            free(*resp);
-            *resp = NULL;
-            return PAM_CONV_ERR;
-        }
-        (*resp)[c].resp_retcode = 0;
-        (*resp)[c].resp = strdup(msg[c]->msg_style == PAM_PROMPT_ECHO_OFF
-                                   ? attempt->password : "");
-        if ((*resp)[c].resp == NULL) {
-            perror("strdup");
-            return 1;
-        }
-    }
-
-    return 0;
-}
-#endif
-
 /*
  * This callback is only a dummy, see xcb_prepare_cb and xcb_check_cb.
  * See also man libev(3): "ev_prepare" and "ev_check" - customise your event loop
@@ -1032,11 +962,24 @@ static void xcb_check_cb(EV_P_ ev_check *w, int revents) {
                     dont_fork = true;
 
                     /* In the parent process, we exit */
-                    if (fork() != 0) {
+                    pid_t daemon_pid = fork();
+                    if (daemon_pid < 0) {
+                        err(EXIT_FAILURE, "Could not fork locker");
+                    }
+                    if (daemon_pid > 0) {
                         exit(0);
+                    }
+                    /* Linux drops mlock protections across fork. Restore both
+                     * snapshots and the input buffer before accepting input. */
+                    if (!auth_lock_memory() || mlock(password, sizeof(password)) != 0) {
+                        err(EXIT_FAILURE, "Could not re-lock password memory after fork");
                     }
 
                     ev_loop_fork(EV_DEFAULT);
+                    if (retry_verification) {
+                        retry_verification = false;
+                        finish_input();
+                    }
                 }
                 break;
 
@@ -1123,10 +1066,6 @@ int main(int argc, char *argv[]) {
     char *username;
     char *image_path = NULL;
     char *image_raw_format = NULL;
-#ifndef __OpenBSD__
-    int ret;
-    struct pam_conv conv = {conv_callback, &fingerprint_auth};
-#endif
     int curs_choice = CURS_NONE;
     int o;
     int longoptind = 0;
@@ -1176,17 +1115,22 @@ int main(int argc, char *argv[]) {
                     arg++;
                 }
 
-                if (strlen(arg) != 6 || sscanf(arg, "%06[0-9a-fA-F]", color) != 1) {
+                if (strlen(arg) != 6 || strspn(arg, "0123456789abcdefABCDEF") != 6) {
                     errx(EXIT_FAILURE, "color is invalid, it must be given in 3-byte hexadecimal format: rrggbb");
                 }
 
+                memcpy(color, arg, sizeof(color));
                 break;
             }
             case 'u':
                 unlock_indicator = false;
                 break;
             case 'i':
+                free(image_path);
                 image_path = strdup(optarg);
+                if (!image_path) {
+                    err(EXIT_FAILURE, "Could not copy image path");
+                }
                 break;
             case 't':
                 tile = true;
@@ -1207,7 +1151,11 @@ int main(int argc, char *argv[]) {
                 if (strcmp(longopts[longoptind].name, "debug") == 0) {
                     debug_mode = true;
                 } else if (strcmp(longopts[longoptind].name, "raw") == 0) {
+                    free(image_raw_format);
                     image_raw_format = strdup(optarg);
+                    if (!image_raw_format) {
+                        err(EXIT_FAILURE, "Could not copy raw image format");
+                    }
                 }
                 break;
             case 'f':
@@ -1239,41 +1187,12 @@ int main(int argc, char *argv[]) {
      * the unlock indicator upon keypresses. */
     srand(time(NULL));
 
-#ifndef __OpenBSD__
-    /* Initialize PAM */
-    if ((ret = pam_start("i3lock", username, &conv, &fingerprint_auth.handle)) != PAM_SUCCESS) {
-        errx(EXIT_FAILURE, "PAM: %s", pam_strerror(fingerprint_auth.handle, ret));
+    if (!auth_init(username, getenv("DOOM_LOCK_PAM_DIR"), getenv("DISPLAY"))) {
+        errx(EXIT_FAILURE, "Could not initialize authentication");
     }
-
-    if ((ret = pam_set_item(fingerprint_auth.handle, PAM_TTY, getenv("DISPLAY"))) != PAM_SUCCESS) {
-        errx(EXIT_FAILURE, "PAM: %s", pam_strerror(fingerprint_auth.handle, ret));
-    }
-    const char *password_confdir = getenv("DOOM_LOCK_PAM_DIR");
-    if (!password_confdir) errx(EXIT_FAILURE, "Missing password PAM configuration");
-    struct pam_conv password_conv = {conv_callback, &password_auth};
-    ret = pam_start_confdir("i3lock-password", username, &password_conv,
-                           password_confdir, &password_auth.handle);
-    if (ret != PAM_SUCCESS) errx(EXIT_FAILURE, "Password PAM initialization failed");
-    ret = pam_set_item(password_auth.handle, PAM_TTY, getenv("DISPLAY"));
-    if (ret != PAM_SUCCESS) errx(EXIT_FAILURE, "Password PAM display setup failed");
-
-#endif
-
-/* Using mlock() as non-super-user seems only possible in Linux.
- * Users of other operating systems should use encrypted swap/no swap
- * (or remove the ifdef and run i3lock as super-user).
- * Alas, swap is encrypted by default on OpenBSD so swapping out
- * is not necessarily an issue. */
-#if defined(__linux__)
-    /* Lock the area where we store the password in memory, we don’t want it to
-     * be swapped to disk. Since Linux 2.6.9, this does not require any
-     * privileges, just enough bytes in the RLIMIT_MEMLOCK limit. */
-    if (mlock(password, sizeof(password)) != 0 ||
-        mlock(fingerprint_auth.password, sizeof(fingerprint_auth.password)) != 0 ||
-        mlock(password_auth.password, sizeof(password_auth.password)) != 0) {
+    if (mlock(password, sizeof(password)) != 0) {
         err(EXIT_FAILURE, "Could not lock page in memory, check RLIMIT_MEMLOCK");
     }
-#endif
 
     /* Double checking that connection is good and operatable with xcb */
     int screennr;
@@ -1429,50 +1348,38 @@ int main(int argc, char *argv[]) {
         errx(EXIT_FAILURE, "Could not initialize libev. Bad LIBEV_FLAGS?");
     }
 
-    ev_async_init(&fingerprint_auth.completed, auth_completed_cb);
-    fingerprint_auth.completed.data = &fingerprint_auth;
-    ev_async_start(main_loop, &fingerprint_auth.completed);
-    ev_async_init(&password_auth.completed, auth_completed_cb);
-    password_auth.completed.data = &password_auth;
-    ev_async_start(main_loop, &password_auth.completed);
-    ev_async_init(&fingerprint_updates, fingerprint_update_cb);
-    ev_async_start(main_loop, &fingerprint_updates);
+    auth_watch(main_loop, auth_completed, fingerprint_notice_received);
     ev_timer_init(&fingerprint_start, fingerprint_start_cb, 0, 0);
 
     /* Explicitly call the screen redraw in case "locking…" message was displayed */
     auth_state = STATE_AUTH_IDLE;
     redraw_screen();
 
-    struct ev_io *xcb_watcher = calloc(1, sizeof(struct ev_io));
-    struct ev_check *xcb_check = calloc(1, sizeof(struct ev_check));
-    struct ev_prepare *xcb_prepare = calloc(1, sizeof(struct ev_prepare));
+    struct ev_io xcb_watcher;
+    struct ev_check xcb_check;
+    struct ev_prepare xcb_prepare;
 
-    ev_io_init(xcb_watcher, xcb_got_event, xcb_get_file_descriptor(conn), EV_READ);
-    ev_io_start(main_loop, xcb_watcher);
+    ev_io_init(&xcb_watcher, xcb_got_event, xcb_get_file_descriptor(conn), EV_READ);
+    ev_io_start(main_loop, &xcb_watcher);
 
-    ev_check_init(xcb_check, xcb_check_cb);
-    ev_check_start(main_loop, xcb_check);
+    ev_check_init(&xcb_check, xcb_check_cb);
+    ev_check_start(main_loop, &xcb_check);
 
-    ev_prepare_init(xcb_prepare, xcb_prepare_cb);
-    ev_prepare_start(main_loop, xcb_prepare);
+    ev_prepare_init(&xcb_prepare, xcb_prepare_cb);
+    ev_prepare_start(main_loop, &xcb_prepare);
 
     /* Invoke the event callback once to catch all the events which were
      * received up until now. ev will only pick up new events (when the X11
      * file descriptor becomes readable). */
-    ev_invoke(main_loop, xcb_check, 0);
+    ev_invoke(main_loop, &xcb_check, 0);
     doom_start(main_loop);
     if (doom_enabled()) {
         schedule_fingerprint_scan(0);
     }
     ev_loop(main_loop, 0);
 
-#ifndef __OpenBSD__
-    if (!fingerprint_auth.pending)
-        pam_end(fingerprint_auth.handle, fingerprint_auth.result);
-    if (!password_auth.pending)
-        pam_end(password_auth.handle, password_auth.result);
-    /* Returning from main terminates any scan still running in its worker. */
-#endif
+    auth_close();
+    doom_close();
 
     if (stolen_focus == XCB_NONE) {
         return 0;

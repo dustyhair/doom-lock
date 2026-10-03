@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Extract local Doom II sprites, preserving the patch origins and palette."""
 import argparse
+import csv
 import json
 import struct
 from pathlib import Path
@@ -8,28 +9,13 @@ from pathlib import Path
 from PIL import Image
 from PIL import ImageChops
 
-# Normal death frames from id Software's linuxdoom-1.10/info.c.
-MONSTERS = [
-    ("zombieman", "ZOMBIEMAN", "POSS", "HIJKL"),
-    ("shotgun-guy", "SHOTGUN GUY", "SPOS", "HIJKL"),
-    ("imp", "IMP", "TROO", "IJKLM"),
-    ("demon", "DEMON", "SARG", "IJKLMN"),
-    ("cacodemon", "CACODEMON", "HEAD", "GHIJKL"),
-    ("baron", "BARON OF HELL", "BOSS", "IJKLMNO"),
-    ("hell-knight", "HELL KNIGHT", "BOS2", "IJKLMNO"),
-    ("revenant", "REVENANT", "SKEL", "LMNOPQ"),
-    ("mancubus", "MANCUBUS", "FATT", "KLMNOPQRST"),
-    ("chaingunner", "CHAINGUNNER", "CPOS", "HIJKLMN"),
-    ("arachnotron", "ARACHNOTRON", "BSPI", "JKLMNOP"),
-    ("lost-soul", "LOST SOUL", "SKUL", "FGHIJK"),
-    ("pain-elemental", "PAIN ELEMENTAL", "PAIN", "HIJKLM"),
-    ("cyberdemon", "CYBERDEMON", "CYBR", "HIJKLMNOP"),
-]
-WALK = {"HEAD": "A", "SKUL": "AB", "PAIN": "ABC",
-        "SKEL": "ABCDEF", "FATT": "ABCDEF", "BSPI": "ABCDEF"}
-PAIN = {"POSS": "G", "SPOS": "G", "TROO": "H", "SARG": "H", "HEAD": "E",
-        "BOSS": "H", "BOS2": "H", "SKEL": "L", "FATT": "J", "CPOS": "G",
-        "BSPI": "I", "SKUL": "E", "PAIN": "G", "CYBR": "G"}
+# Read the same simple catalogue included by the C loader and renderer.
+_catalogue = Path(__file__).resolve().parents[1] / "include/monsters.def"
+_records = [next(csv.reader([line.removeprefix("MONSTER(").removesuffix(")")], skipinitialspace=True))
+            for line in _catalogue.read_text().splitlines() if line.startswith("MONSTER(")]
+MONSTERS = [(slug, label, prefix, death) for slug, label, prefix, death, walk, pain, floating in _records]
+WALK = {record[2]: record[4] for record in _records}
+PAIN = {record[2]: record[5] for record in _records}
 # Matching combinations from MAP01, MAP02, MAP05, MAP14, and MAP24.
 WALLS = ["TEKGREN2", "TEKGREN5", "STONE4", "PIPEWAL1", "BIGBRIK1", "BIGBRIK2",
          "BSTONE1", "BSTONE2", "SKIN2", "TANROCK5"]

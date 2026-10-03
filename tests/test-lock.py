@@ -28,6 +28,7 @@ environment = dict(os.environ, DISPLAY=display, LD_PRELOAD=str(output / "pam-stu
                    DOOM_LOCK_ASSETS=str(root / "assets"))
 environment["DOOM_LOCK_PAM_DIR"] = str(output / "pam")
 environment.pop("XAUTHORITY", None)
+environment.pop("WAYLAND_DISPLAY", None)
 environment.pop("DOOM_LOCK_WAD", None)
 if os.environ.get("DOOM_TEST_WAD"):
     environment["DOOM_LOCK_WAD"] = os.environ["DOOM_TEST_WAD"]
@@ -58,7 +59,11 @@ def start(mode):
     environment.update(DOOM_TEST_MODE=mode, DOOM_TEST_TRACE=str(trace))
     process = subprocess.Popen([binary, "-n", "-c", "080808"],
                                env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    wait_for(lambda: trace_lines()[:1] == ["empty"])
+    def ready():
+        if process.poll() is not None:
+            raise AssertionError("Locker exited during startup: " + process.stderr.read().decode())
+        return trace_lines()[:1] == ["empty"]
+    wait_for(ready)
     assert process.poll() is None
     return process
 
@@ -212,6 +217,32 @@ try:
     process.wait(timeout=5)
     assert process.returncode == 0
     print("PASS: Backspace corrects password input during a fingerprint scan")
+
+    compose = output / "XCompose"
+    compose.write_text('<Multi_key> <a> <a> : "do"\n' +
+                       '<Multi_key> <b> <b> : "' + 'x' * 200 + '"\n')
+    environment["XCOMPOSEFILE"] = str(compose)
+    environment["LC_ALL"] = "C.UTF-8"
+    process = start("compose-input")
+    run("xdotool", "key", "Multi_key", "b", "b")
+    run("xdotool", "key", "Multi_key", "a", "a")
+    run("xdotool", "type", "om-test")
+    run("xdotool", "key", "Return")
+    wait_for(lambda: "match" in trace_lines(), timeout=0.8)
+    process.wait(timeout=5)
+    assert process.returncode == 0, "Compose input overflowed or lost the valid sequence"
+    environment.pop("XCOMPOSEFILE")
+    print("PASS: long Compose expansion is rejected safely; short composed input authenticates")
+
+    process = start("full-input-buffer")
+    run("xdotool", "type", "--delay", "0", "x" * 600)
+    run("xdotool", "key", "ctrl+u")
+    run("xdotool", "type", "doom-test")
+    run("xdotool", "key", "Return")
+    wait_for(lambda: "match" in trace_lines(), timeout=0.8)
+    process.wait(timeout=5)
+    assert process.returncode == 0
+    print("PASS: a full input buffer remains editable and authenticates after clearing")
 
     process = start("clear-input")
     run("xdotool", "type", "wrong-prefix")

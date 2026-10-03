@@ -1,6 +1,6 @@
 # Doom lock screen
 
-This local fork of i3lock 2.16 adds a moving Doom maze and 14 Doom II monster
+This fork of i3lock 2.16 adds a moving Doom maze and 14 Doom II monster
 animations to the existing i3 lock menu. Content can come directly from a
 user-supplied Doom II-compatible WAD or from an extracted PNG folder. WADs and
 extracted game assets are ignored by Git; the executable contains no artwork.
@@ -82,15 +82,15 @@ fingerprint check if one is not already running.
 
 Fingerprint PAM uses `/etc/pam.d/i3lock`, which includes the existing login stack.
 For password PAM, the launcher validates the current system policy and copies it
-into `~/.local/share/doom-lock/pam` on every lock. It accepts the `pam-auth-update`
+into `~/.local/share/doom-lock/pam` on every lock. The installer currently requires fingerprint support. It accepts the `pam-auth-update`
 alternative block with an initial fingerprint rule, Unix or SSS password rules,
 the deny/permit fallback, and optional capability rules. Each provider must use
 `[success=N default=ignore]` with its success jump targeting the permit rule.
 It removes only that optional fingerprint alternative. Required fingerprint
-rules, other authentication layouts, and additional factors cause the launcher
+rules and additional factors inside common-auth cause the launcher
 to fall back to the original locker. Validation finishes before the existing
 local policy copy changes. The copy preserves password rules, relative jump
-destinations, and the system's failure delay, which is three seconds here.
+destinations, and the system's failure delay.
 No system PAM file is edited. A background fingerprint worker refuses hidden
 password prompts from the system stack. It cannot fall back to blank Unix/SSS
 password attempts or use the password being typed for the separate worker.
@@ -100,8 +100,8 @@ The X11 thread renders and accepts input while verification runs. Each snapshot
 is erased when its check finishes. Either successful PAM check allows an exit;
 failed fingerprint scans cannot override a password result or clear typed input.
 The visual effect distinguishes a fingerprint success from a password success
-by whether PAM requested a hidden password during that verification. This affects
-only the animation, never the authentication result.
+by which verification channel succeeded. The fingerprint channel refuses hidden
+password prompts. The channel affects only the animation, never the authentication result.
 
 Installed files:
 
@@ -113,14 +113,14 @@ Installed files:
 - `~/.local/share/doom-lock/prepare-pam.py`, the policy preparation helper
 - `~/.local/share/doom-lock/lock-screen.sh.before-doom-*`, the original launcher backup
 
-Source is in `~/Development/side_projects/doom-lock`. The custom locker and its
+The source checkout can live anywhere. The custom locker and its
 user-local header build target Linux. No system executable or PAM file is replaced.
 If the custom binary or content cannot load, the launcher uses the original
 system i3lock and its fingerprint startup shortcut.
 
 ## Rebuild and install
 
-The local build targets Debian/Ubuntu Linux. It requires Python 3, a C compiler,
+The local build targets Debian/Ubuntu Linux. It requires Python 3.9 or newer, a C compiler,
 `apt`, `dpkg-deb`, and the installed runtime libraries for PAM, Cairo, libev,
 XCB including SHAPE, and xkbcommon. Direct WAD loading needs no Pillow or game
 assets at build time. Optional PNG extraction and asset tests need Pillow,
@@ -135,9 +135,10 @@ system packages or require root. Archives remain in `.build-deps/packages`.
 The local build uses these headers and the installed runtime libraries.
 
 ```sh
-cd ~/Development/side_projects/doom-lock
+cd doom-lock
 python3 tools/bootstrap-deps.py
 python3 tools/build-local.py
+python3 tests/test-auth.py
 python3 tests/test-pam.py
 python3 tests/test-assets.py
 python3 tools/install-local.py --wad /path/to/DOOM2.WAD
@@ -169,7 +170,8 @@ WAD loading is enabled by default. `python3 tools/build-local.py --without-wad`
 or Meson's `-Dwad_assets=false` compiles out the WAD parser while retaining PNG
 support. Both builds use external content; neither embeds artwork. A source
 archive created with `git archive` includes tracked code and excludes the local
-ignored WADs, extracted assets, and build directory. Include `LICENSE` with
+ignored WADs, extracted assets, and build directory. Rendered demo GIFs live
+in `docs/demo`. Include `LICENSE` with
 code distributions and let each user supply their own content.
 
 The native asset tests generate synthetic artwork, check mirrored rotations,
@@ -226,8 +228,8 @@ access and does not lock the screen.
 
 Meson is also supported when development libraries are installed through your
 distribution. `meson setup build/meson` and `meson compile -C build/meson` produce
-`build/meson/i3lock-doom`. To use that binary with the local installer, copy it to
-`build/i3lock-doom` first. `meson install` installs only `i3lock-doom`; it does not
+`build/meson/i3lock-doom`. Pass `--binary build/meson/i3lock-doom` to the
+local installer to select it. `meson install` installs only `i3lock-doom`; it does not
 install an `i3lock` binary, system PAM policy, or the upstream manual. The launcher,
 sprites, and password policy still require the local installation above.
 

@@ -20,25 +20,25 @@
 typedef struct {
     const char *id, *name;
     int count, walk_count;
+    bool floating;
     int origin_x, origin_y;
     cairo_surface_t *idle, *pain, *walk[6], *death[MAX_FRAMES];
 } monster_t;
 
+/* Keep catalogue edits within the fixed frame arrays at compile time. */
+#define MONSTER(id, label, prefix, death, walk, pain, floating)               \
+    _Static_assert(sizeof(death) > 2 && sizeof(death) - 1 <= MAX_FRAMES &&    \
+                       sizeof(walk) > 1 && sizeof(walk) - 1 <= 6 &&           \
+                       sizeof(pain) == 2 && sizeof(prefix) == 5 &&            \
+                       sizeof(death) + sizeof(walk) + sizeof(pain) - 2 <= 20, \
+                   "Invalid monster catalogue frames: " id);
+#include "monsters.def"
+#undef MONSTER
+
 static monster_t monsters[] = {
-    {"zombieman", "ZOMBIEMAN", 5, 4},
-    {"shotgun-guy", "SHOTGUN GUY", 5, 4},
-    {"imp", "IMP", 5, 4},
-    {"demon", "DEMON", 6, 4},
-    {"cacodemon", "CACODEMON", 6, 1},
-    {"baron", "BARON OF HELL", 7, 4},
-    {"hell-knight", "HELL KNIGHT", 7, 4},
-    {"revenant", "REVENANT", 6, 6},
-    {"mancubus", "MANCUBUS", 10, 6},
-    {"chaingunner", "CHAINGUNNER", 7, 4},
-    {"arachnotron", "ARACHNOTRON", 7, 6},
-    {"lost-soul", "LOST SOUL", 6, 2},
-    {"pain-elemental", "PAIN ELEMENTAL", 6, 3},
-    {"cyberdemon", "CYBERDEMON", 9, 4},
+#define MONSTER(id, label, prefix, death, walk, pain, floating) {id, label, sizeof(death) - 1, sizeof(walk) - 1, floating},
+#include "monsters.def"
+#undef MONSTER
 };
 static const int monster_count = sizeof(monsters) / sizeof(monsters[0]);
 static bool enabled, authenticated, failure;
@@ -54,62 +54,120 @@ static int current, frame = -1, corpse_ticks;
 static ev_timer animation;
 static ev_timer scene_animation;
 static double scene_updated;
-extern auth_state_t auth_state;
-extern char *modifier_string;
-extern int input_position;
-extern bool password_verifying;
-extern char fingerprint_status[160];
 
 bool doom_init(void) {
     const char *folder = getenv("DOOM_LOCK_ASSETS");
     const char *wad_path = getenv("DOOM_LOCK_WAD");
-    if ((!folder || !folder[0]) && (!wad_path || !wad_path[0])) return false;
-    if (!assets_open(wad_path)) return false;
+    if ((!folder || !folder[0]) && (!wad_path || !wad_path[0])) {
+        return false;
+    }
+    if (!assets_open(wad_path)) {
+        return false;
+    }
     bool loaded = false;
     char path[64];
     player_dead = assets_image(folder, "player-dead.png");
-    if (!player_dead) goto done;
+    if (!player_dead) {
+        goto done;
+    }
     for (int i = 0; i < 4; i++) {
         snprintf(path, sizeof(path), "bfg-%02d.png", i);
         bfg_blast[i] = assets_image(folder, path);
-        if (!bfg_blast[i]) goto done;
+        if (!bfg_blast[i]) {
+            goto done;
+        }
     }
     for (int i = 0; i < 2; i++) {
         snprintf(path, sizeof(path), "bfg-projectile-%02d.png", i);
         bfg_projectile[i] = assets_image(folder, path);
-        if (!bfg_projectile[i]) goto done;
+        if (!bfg_projectile[i]) {
+            goto done;
+        }
     }
     for (int i = 0; i < monster_count; i++) {
-        if (!assets_origin(folder, monsters[i].id, &monsters[i].origin_x, &monsters[i].origin_y)) goto done;
+        if (!assets_origin(folder, monsters[i].id, &monsters[i].origin_x, &monsters[i].origin_y)) {
+            goto done;
+        }
         snprintf(path, sizeof(path), "%s/idle.png", monsters[i].id);
         monsters[i].idle = assets_image(folder, path);
-        if (!monsters[i].idle) goto done;
+        if (!monsters[i].idle) {
+            goto done;
+        }
         snprintf(path, sizeof(path), "%s/pain.png", monsters[i].id);
         monsters[i].pain = assets_image(folder, path);
-        if (!monsters[i].pain) goto done;
+        if (!monsters[i].pain) {
+            goto done;
+        }
         for (int j = 0; j < monsters[i].walk_count; j++) {
             snprintf(path, sizeof(path), "%s/walk-%02d.png", monsters[i].id, j);
             monsters[i].walk[j] = assets_image(folder, path);
-            if (!monsters[i].walk[j]) goto done;
+            if (!monsters[i].walk[j]) {
+                goto done;
+            }
         }
         for (int j = 0; j < monsters[i].count; j++) {
             snprintf(path, sizeof(path), "%s/death-%02d.png", monsters[i].id, j);
             monsters[i].death[j] = assets_image(folder, path);
-            if (!monsters[i].death[j]) goto done;
+            if (!monsters[i].death[j]) {
+                goto done;
+            }
         }
     }
-    if (!level_init(folder)) goto done;
+    if (!level_init(folder)) {
+        goto done;
+    }
     current = rand() % monster_count;
     enabled = true;
     loaded = true;
 done:
     /* Cairo surfaces own the decoded pixels; no WAD I/O occurs while locked. */
     assets_close();
+    if (!loaded) {
+        doom_close();
+    }
     return loaded;
 }
 
-bool doom_enabled(void) { return enabled; }
-bool doom_is_authenticated(void) { return authenticated; }
+void doom_close(void) {
+    if (enabled) {
+        ev_timer_stop(EV_DEFAULT, &animation);
+        ev_timer_stop(EV_DEFAULT, &scene_animation);
+    }
+    for (int i = 0; i < monster_count; i++) {
+        monster_t *monster = &monsters[i];
+        cairo_surface_destroy(monster->idle);
+        cairo_surface_destroy(monster->pain);
+        monster->idle = monster->pain = NULL;
+        for (int j = 0; j < monster->walk_count; j++) {
+            cairo_surface_destroy(monster->walk[j]);
+            monster->walk[j] = NULL;
+        }
+        for (int j = 0; j < monster->count; j++) {
+            cairo_surface_destroy(monster->death[j]);
+            monster->death[j] = NULL;
+        }
+    }
+    cairo_surface_destroy(player_dead);
+    player_dead = NULL;
+    for (int i = 0; i < 4; i++) {
+        cairo_surface_destroy(bfg_blast[i]);
+        bfg_blast[i] = NULL;
+    }
+    for (int i = 0; i < 2; i++) {
+        cairo_surface_destroy(bfg_projectile[i]);
+        bfg_projectile[i] = NULL;
+    }
+    bfg_target = NULL; /* Borrowed from the monster's walk frames. */
+    level_close();
+    enabled = false;
+}
+
+bool doom_enabled(void) {
+    return enabled;
+}
+bool doom_is_authenticated(void) {
+    return authenticated;
+}
 
 static void choose_monster(void) {
     current = (current + 1 + rand() % (monster_count - 1)) % monster_count;
@@ -117,7 +175,9 @@ static void choose_monster(void) {
     corpse_ticks = 0;
 }
 
-bool doom_failure_visible(void) { return failure; }
+bool doom_failure_visible(void) {
+    return failure;
+}
 void doom_denied(void) {
     melt_begin(false);
     failure = true;
@@ -130,7 +190,9 @@ void doom_verifying(void) {
     failure = false;
 }
 void doom_shot(void) {
-    if (!enabled || authenticated) return;
+    if (!enabled || authenticated) {
+        return;
+    }
     doom_verifying();
     hit_until = ev_time() + 0.23;
     flash_until = ev_time() + 0.12;
@@ -139,8 +201,12 @@ void doom_shot(void) {
 void doom_authenticated(bool fingerprint) {
     melt_cancel();
     level_actor_focus();
-    if (frame >= monsters[current].count - 1) choose_monster();
-    if (frame < 0) frame = 0;
+    if (frame >= monsters[current].count - 1) {
+        choose_monster();
+    }
+    if (frame < 0) {
+        frame = 0;
+    }
     authenticated = true;
     failure = false;
     corpse_ticks = 0;
@@ -157,11 +223,21 @@ void doom_authenticated(bool fingerprint) {
         for (int y = 0; y < h; y++) {
             uint32_t *row = (uint32_t *)(data + y * stride);
             for (int x = 0; x < w; x++) {
-                if (!(row[x] >> 24)) continue;
-                if (x < left) left = x;
-                if (x > right) right = x;
-                if (y < upper) upper = y;
-                if (y > lower) lower = y;
+                if (!(row[x] >> 24)) {
+                    continue;
+                }
+                if (x < left) {
+                    left = x;
+                }
+                if (x > right) {
+                    right = x;
+                }
+                if (y < upper) {
+                    upper = y;
+                }
+                if (y > lower) {
+                    lower = y;
+                }
             }
         }
         bfg_target_x = (left + right + 1) / 2.0;
@@ -171,10 +247,14 @@ void doom_authenticated(bool fingerprint) {
 }
 
 static void tick(EV_P_ ev_timer *watcher, int events) {
-    if (failure) return;
+    if (failure) {
+        return;
+    }
     walk_tick++;
     /* The camera renders independently of Doom's slower sprite frames. */
-    if (!authenticated) return;
+    if (!authenticated) {
+        return;
+    }
     if (bfg_kill) {
         bfg_tick++;
         if (bfg_tick == BFG_TRAVEL_TICKS) {
@@ -187,8 +267,11 @@ static void tick(EV_P_ ev_timer *watcher, int events) {
                  * when a monster has a short death animation. */
                 if (++corpse_ticks >= 3 &&
                     bfg_tick >= BFG_TRAVEL_TICKS + BFG_BLAST_TICKS + BFG_SETTLE_TICKS) {
-                    if (melt_begin(true)) ev_timer_stop(loop, watcher);
-                    else ev_break(loop, EVBREAK_ALL);
+                    if (melt_begin(true)) {
+                        ev_timer_stop(loop, watcher);
+                    } else {
+                        ev_break(loop, EVBREAK_ALL);
+                    }
                     return;
                 }
             }
@@ -199,13 +282,13 @@ static void tick(EV_P_ ev_timer *watcher, int events) {
     if (frame >= 0) {
         if (frame < monsters[current].count - 1) {
             frame++;
-        } else if (++corpse_ticks >= (authenticated ? 2 : 7)) {
-            if (authenticated) {
-                if (melt_begin(true)) ev_timer_stop(loop, watcher);
-                else ev_break(loop, EVBREAK_ALL);
-                return;
+        } else if (++corpse_ticks >= 2) {
+            if (melt_begin(true)) {
+                ev_timer_stop(loop, watcher);
+            } else {
+                ev_break(loop, EVBREAK_ALL);
             }
-            choose_monster();
+            return;
         }
     }
     redraw_screen();
@@ -215,13 +298,17 @@ static void scene_tick(EV_P_ ev_timer *watcher, int events) {
     double now = ev_now(loop);
     double elapsed = now - scene_updated;
     scene_updated = now;
-    if (failure || authenticated) return;
+    if (failure || authenticated) {
+        return;
+    }
     level_tick(elapsed);
     redraw_screen();
 }
 
 void doom_start(struct ev_loop *loop) {
-    if (!enabled) return;
+    if (!enabled) {
+        return;
+    }
     scene_updated = ev_now(loop);
     ev_timer_init(&scene_animation, scene_tick, SCENE_FRAME_SECONDS, SCENE_FRAME_SECONDS);
     ev_timer_start(loop, &scene_animation);
@@ -239,18 +326,21 @@ static void centered_text(cairo_t *ctx, const char *text, double center, double 
     cairo_show_text(ctx, text);
 }
 
-void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
+void doom_draw(cairo_t *ctx, int x, int y, int width, int height, const doom_ui_t *ui) {
     monster_t *monster = &monsters[current];
     level_actor_t actor = level_actor_projection(width, height);
     double scale_x = actor.scale_x, scale_y = actor.scale_y;
-    bool floating = current == 4 || current == 11 || current == 12;
+    bool floating = monster->floating;
     double lift = floating ? 16 : 0;
-    if (authenticated && !(bfg_kill && bfg_tick < BFG_TRAVEL_TICKS))
+    if (authenticated && !(bfg_kill && bfg_tick < BFG_TRAVEL_TICKS)) {
         lift *= 1 - (double)frame / (monster->count - 1);
+    }
     double left = x + actor.x - monster->origin_x * scale_x;
     double top = y + actor.floor_y - (monster->origin_y + lift) * scale_y;
     double center = x + width / 2.0;
     cairo_save(ctx);
+    cairo_rectangle(ctx, x, y, width, height);
+    cairo_clip(ctx);
     cairo_select_font_face(ctx, "monospace", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     if (failure) {
         cairo_set_source_rgb(ctx, 0.18, 0.015, 0.01);
@@ -269,8 +359,9 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
         cairo_restore(ctx);
         centered_text(ctx, "ACCESS DENIED", center, middle + 145, 20, 0.8, 0.6, 0.5);
         centered_text(ctx, "TYPE TO TRY AGAIN / OR SCAN FINGER", center, middle + 185, 14, 0.65, 0.45, 0.35);
-        if (fingerprint_status[0])
-            centered_text(ctx, fingerprint_status, center, middle + 220, 13, 0.7, 0.6, 0.5);
+        if (ui->fingerprint_notice[0]) {
+            centered_text(ctx, ui->fingerprint_notice, center, middle + 220, 13, 0.7, 0.6, 0.5);
+        }
         cairo_restore(ctx);
         return;
     }
@@ -287,11 +378,14 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
         cairo_fill(ctx);
     }
     double bob = !authenticated && floating ? sin(walk_tick * 0.4) * 2 * scale_y : 0;
-    cairo_surface_t *sprite = authenticated ? monster->death[frame]
-        : ev_time() < hit_until ? monster->pain
-        : monster->walk[(walk_tick / 2) % monster->walk_count];
-    if (bfg_kill && impact_frame < 0) sprite = bfg_target;
-    else if (bfg_kill && impact_frame == 0) sprite = monster->pain;
+    cairo_surface_t *sprite = authenticated           ? monster->death[frame]
+                              : ev_time() < hit_until ? monster->pain
+                                                      : monster->walk[(walk_tick / 2) % monster->walk_count];
+    if (bfg_kill && impact_frame < 0) {
+        sprite = bfg_target;
+    } else if (bfg_kill && impact_frame == 0) {
+        sprite = monster->pain;
+    }
     if (actor.visible) {
         cairo_save(ctx);
         level_actor_clip(ctx, x, y, width, height, actor.depth);
@@ -335,20 +429,16 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
     cairo_rectangle(ctx, x, y + height - 100, width, 100);
     cairo_fill(ctx);
     centered_text(ctx, monster->name, center, y + height - 80, 14, 0.85, 0.65, 0.38);
-    const char *status = "SCAN FINGER OR TYPE PASSWORD + ENTER";
-    if (authenticated) status = bfg_kill ? "BFG 9000 / ACCESS GRANTED" : "ACCESS GRANTED";
-    else if (auth_state == STATE_AUTH_VERIFY)
-        status = password_verifying ? "VERIFYING PASSWORD" : "VERIFYING / SCAN FINGER";
-    else if (auth_state == STATE_AUTH_WRONG) status = "ACCESS DENIED / TRY AGAIN";
-    else if (auth_state == STATE_AUTH_LOCK) status = "LOCKING";
-    else if (auth_state == STATE_I3LOCK_LOCK_FAILED) status = "COULD NOT LOCK";
-    if (!authenticated && !failure && input_position > 0)
-        status = "PASSWORD ENTERED / PRESS ENTER";
+    const char *status = authenticated
+                             ? (bfg_kill ? "BFG 9000 / ACCESS GRANTED" : "ACCESS GRANTED")
+                             : ui->status;
     centered_text(ctx, status, center, y + height - 55, 15,
                   authenticated ? 0.35 : 0.80, authenticated ? 0.90 : 0.85, 0.70);
-    if (!authenticated && fingerprint_status[0])
-        centered_text(ctx, fingerprint_status, center, y + height - 30, 13, 0.7, 0.8, 0.7);
-    if (modifier_string)
-        centered_text(ctx, modifier_string, center, y + height - 10, 11, 0.9, 0.55, 0.25);
+    if (!authenticated && ui->fingerprint_notice[0]) {
+        centered_text(ctx, ui->fingerprint_notice, center, y + height - 30, 13, 0.7, 0.8, 0.7);
+    }
+    if (ui->modifiers) {
+        centered_text(ctx, ui->modifiers, center, y + height - 10, 11, 0.9, 0.55, 0.25);
+    }
     cairo_restore(ctx);
 }

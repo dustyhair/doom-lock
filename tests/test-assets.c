@@ -4,19 +4,24 @@
 #include "../assets.c"
 
 int main(int argc, char **argv) {
-    if (argc != 3 && argc != 4) return 2;
+    if (argc != 3 && argc != 4) {
+        return 2;
+    }
     bool valid = assets_open(argv[2]);
     if (strcmp(argv[1], "--validate") == 0) {
         assets_close();
         return valid ? 0 : 1;
     }
-    if (!valid || argc != 4) return 1;
+    if (!valid || argc != 4) {
+        return 1;
+    }
 #if DOOM_WAD_ASSETS
     size_t count = image_count;
     image_t retained[256];
     memcpy(retained, images, sizeof(retained));
-    for (size_t i = 0; i < count; i++)
+    for (size_t i = 0; i < count; i++) {
         retained[i].surface = cairo_surface_reference(retained[i].surface);
+    }
     for (size_t i = 0; i < sizeof(sprites) / sizeof(sprites[0]); i++) {
         char path[4096];
         snprintf(path, sizeof(path), "%s/%s/origin.txt", argv[3], sprites[i].id);

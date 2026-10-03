@@ -40,6 +40,8 @@ extern bool debug_mode;
 /* The current position in the input buffer. Useful to determine if any
  * characters of the password have already been entered or not. */
 extern int input_position;
+extern bool password_verifying;
+extern char fingerprint_status[];
 
 /* The lock window. */
 extern xcb_window_t win;
@@ -387,15 +389,30 @@ void draw_image(xcb_pixmap_t bg_pixmap, uint32_t *resolution) {
     }
 
     if (doom_enabled()) {
+        const char *status = "SCAN FINGER OR TYPE PASSWORD + ENTER";
+        if (auth_state == STATE_AUTH_LOCK) {
+            status = "LOCKING";
+        } else if (auth_state == STATE_I3LOCK_LOCK_FAILED) {
+            status = "COULD NOT LOCK";
+        } else if (password_verifying) {
+            status = "VERIFYING PASSWORD";
+        } else if (input_position > 0) {
+            status = "PASSWORD ENTERED / PRESS ENTER";
+        } else if (auth_state == STATE_AUTH_VERIFY) {
+            status = "VERIFYING / SCAN FINGER";
+        } else if (auth_state == STATE_AUTH_WRONG) {
+            status = "ACCESS DENIED / TRY AGAIN";
+        }
+        doom_ui_t ui = {status, fingerprint_status, modifier_string};
         if (xr_screens > 0) {
             for (int monitor = 0; monitor < xr_screens; monitor++) {
                 Rect r = xr_resolutions[monitor];
                 level_draw(xcb_ctx, r.x, r.y, r.width, r.height);
-                doom_draw(xcb_ctx, r.x, r.y, r.width, r.height);
+                doom_draw(xcb_ctx, r.x, r.y, r.width, r.height, &ui);
             }
         } else {
             level_draw(xcb_ctx, 0, 0, resolution[0], resolution[1]);
-            doom_draw(xcb_ctx, 0, 0, resolution[0], resolution[1]);
+            doom_draw(xcb_ctx, 0, 0, resolution[0], resolution[1], &ui);
         }
     } else if (xr_screens > 0) {
         /* Composite the unlock indicator in the middle of each screen. */
@@ -428,11 +445,13 @@ void draw_image(xcb_pixmap_t bg_pixmap, uint32_t *resolution) {
 static xcb_pixmap_t bg_pixmap = XCB_NONE;
 
 cairo_surface_t *capture_lock_frame(void) {
-    if (bg_pixmap == XCB_NONE) return NULL;
+    if (bg_pixmap == XCB_NONE) {
+        return NULL;
+    }
     cairo_surface_t *copy = cairo_image_surface_create(CAIRO_FORMAT_RGB24,
-        last_resolution[0], last_resolution[1]);
+                                                       last_resolution[0], last_resolution[1]);
     cairo_surface_t *source = cairo_xcb_surface_create(conn, bg_pixmap, vistype,
-        last_resolution[0], last_resolution[1]);
+                                                       last_resolution[0], last_resolution[1]);
     cairo_t *ctx = cairo_create(copy);
     cairo_set_source_surface(ctx, source, 0, 0);
     cairo_paint(ctx);

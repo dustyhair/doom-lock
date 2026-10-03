@@ -28,7 +28,9 @@ extern xcb_window_t win;
 extern uint32_t last_resolution[2];
 
 void melt_cancel(void) {
-    if (!active) return;
+    if (!active) {
+        return;
+    }
     ev_timer_stop(main_loop, &timer);
     active = false;
     cairo_surface_destroy(snapshot);
@@ -41,13 +43,17 @@ void melt_cancel(void) {
     rectangles = NULL;
     /* A resize can interrupt an authenticated melt after the monster timer
      * stops. Finish unlocking rather than leave a stopped animation locked. */
-    if (reveal && doom_is_authenticated()) ev_break(main_loop, EVBREAK_ALL);
+    if (reveal && doom_is_authenticated()) {
+        ev_break(main_loop, EVBREAK_ALL);
+    }
 }
 
 static void tick(EV_P_ ev_timer *watcher, int events) {
     bool done = true;
     int elapsed_ticks = (ev_now(loop) - started) * 35;
-    if (elapsed_ticks <= ticks_drawn) return;
+    if (elapsed_ticks <= ticks_drawn) {
+        return;
+    }
     /* Preserve the wipe's duration if a slower display skips render frames. */
     for (; ticks_drawn < elapsed_ticks; ticks_drawn++) {
         done = true;
@@ -58,23 +64,35 @@ static void tick(EV_P_ ev_timer *watcher, int events) {
             } else if (*position < MELT_HEIGHT) {
                 int step = *position < 16 ? *position + 1 : 8;
                 *position += step;
-                if (*position > MELT_HEIGHT) *position = MELT_HEIGHT;
+                if (*position > MELT_HEIGHT) {
+                    *position = MELT_HEIGHT;
+                }
             }
-            if (*position < MELT_HEIGHT) done = false;
+            if (*position < MELT_HEIGHT) {
+                done = false;
+            }
         }
-        if (done) break;
+        if (done) {
+            break;
+        }
     }
     redraw_screen();
-    if (done) melt_cancel();
+    if (done) {
+        melt_cancel();
+    }
 }
 
 bool melt_begin(bool reveal_desktop) {
-    if (!doom_enabled() || (reveal_desktop && !doom_is_authenticated())) return false;
+    if (!doom_enabled() || (reveal_desktop && !doom_is_authenticated())) {
+        return false;
+    }
     melt_cancel();
     snapshot = capture_lock_frame();
-    if (!snapshot) return false;
+    if (!snapshot) {
+        return false;
+    }
     falling_frame = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
-        last_resolution[0], last_resolution[1]);
+                                               last_resolution[0], last_resolution[1]);
     int monitors = xr_screens > 0 ? xr_screens : 1;
     columns = calloc(monitors * MELT_COLUMNS, sizeof(*columns));
     rectangles = calloc(monitors * MELT_COLUMNS, sizeof(*rectangles));
@@ -92,16 +110,22 @@ bool melt_begin(bool reveal_desktop) {
     column_count = 0;
     for (int monitor = 0; monitor < monitors; monitor++) {
         Rect region = xr_screens > 0 ? xr_resolutions[monitor]
-            : (Rect){0, 0, last_resolution[0], last_resolution[1]};
+                                     : (Rect){0, 0, last_resolution[0], last_resolution[1]};
         int delay = -(rand() % 16);
         for (int i = 0; i < MELT_COLUMNS; i++) {
-            if (i) delay += rand() % 3 - 1;
-            if (delay > 0) delay = 0;
-            if (delay < -15) delay = -15;
+            if (i) {
+                delay += rand() % 3 - 1;
+            }
+            if (delay > 0) {
+                delay = 0;
+            }
+            if (delay < -15) {
+                delay = -15;
+            }
             int left = region.x + i * region.width / MELT_COLUMNS;
             int right = region.x + (i + 1) * region.width / MELT_COLUMNS;
             columns[column_count++] = (melt_column_t){left, region.y,
-                right - left, region.height, delay};
+                                                      right - left, region.height, delay};
         }
     }
     const xcb_query_extension_reply_t *extension = xcb_get_extension_data(conn, &xcb_shape_id);
@@ -116,7 +140,9 @@ bool melt_begin(bool reveal_desktop) {
 }
 
 void melt_draw(cairo_t *ctx) {
-    if (!active) return;
+    if (!active) {
+        return;
+    }
     /* Compose strips in memory and upload one frame. Drawing each strip
      * directly on XCB would upload the full snapshot repeatedly. */
     cairo_t *frame_ctx = cairo_create(falling_frame);
@@ -132,7 +158,9 @@ void melt_draw(cairo_t *ctx) {
     for (int i = 0; i < column_count; i++) {
         melt_column_t *column = &columns[i];
         int drop = column->position > 0 ? column->position * column->height / MELT_HEIGHT : 0;
-        if (drop >= column->height || column->width == 0) continue;
+        if (drop >= column->height || column->width == 0) {
+            continue;
+        }
         cairo_save(frame_ctx);
         cairo_rectangle(frame_ctx, column->x, column->y + drop, column->width, column->height - drop);
         cairo_clip(frame_ctx);
@@ -149,14 +177,18 @@ void melt_draw(cairo_t *ctx) {
 void melt_shape(void) {
     /* This is the only path which uncovers the desktop. PAM success sets
      * authenticated before the death animation can start this transition. */
-    if (!active || !reveal || !shape_available || !doom_is_authenticated()) return;
+    if (!active || !reveal || !shape_available || !doom_is_authenticated()) {
+        return;
+    }
     int count = 0;
     for (int i = 0; i < column_count; i++) {
         melt_column_t *column = &columns[i];
         int drop = column->position > 0 ? column->position * column->height / MELT_HEIGHT : 0;
-        if (drop >= column->height || column->width == 0) continue;
+        if (drop >= column->height || column->width == 0) {
+            continue;
+        }
         rectangles[count++] = (xcb_rectangle_t){column->x, column->y + drop,
-                                               column->width, column->height - drop};
+                                                column->width, column->height - drop};
     }
     xcb_shape_rectangles(conn, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING,
                          XCB_CLIP_ORDERING_UNSORTED, win, 0, 0, count, rectangles);

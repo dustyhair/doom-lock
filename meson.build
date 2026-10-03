@@ -10,24 +10,18 @@ project(
   default_options: [
     'c_std=c11',
     'warning_level=1',  # enable all warnings (-Wall)
-    # TODO(https://github.com/i3/i3/issues/4087): switch to
-    # 'buildtype=debugoptimized',
   ],
-  # Ubuntu 18.04 (supported until 2023) has meson 0.45.
-  # We can revisit our minimum supported meson version
-  # if it turns out to be too hard to maintain.
-  meson_version: '>=0.45.0',
+  meson_version: '>=0.55.0',
 )
+
+if host_machine.system() != 'linux'
+  error('doom-lock requires Linux PAM and X11')
+endif
 
 cc = meson.get_compiler('c')
 add_project_arguments(cc.get_supported_arguments(['-Wunused-value']), language: 'c')
 
-if meson.version().version_compare('>=0.48.0')
-  # https://github.com/mesonbuild/meson/issues/2166#issuecomment-629696911
-  meson.add_dist_script('meson/meson-dist-script')
-else
-  message('meson <0.48.0 detected, dist tarballs will not be filtered')
-endif
+meson.add_dist_script('meson/meson-dist-script')
 
 ################################################################################
 # Version handling
@@ -35,7 +29,6 @@ endif
 
 cdata = configuration_data()
 
-version_array = meson.project_version().split('.')
 cdata.set_quoted('I3LOCK_VERSION', '@VCS_TAG@')
 cdata.set_quoted('SYSCONFDIR', join_paths(get_option('prefix'), get_option('sysconfdir')))
 
@@ -88,6 +81,7 @@ xkbcommon_x11_dep = dependency('xkbcommon-x11', method: 'pkg-config')
 cairo_dep = dependency('cairo', version: '>=1.14.4', method: 'pkg-config')
 
 i3lock_srcs = [
+  'auth.c',
   'assets.c',
   'dpi.c',
   'doom.c',
@@ -122,11 +116,8 @@ i3lock_deps = [
   xkbcommon_x11_dep,
 ]
 
-host_os = host_machine.system()
-if host_os != 'openbsd'
-  pam_dep = cc.find_library('pam', required: true)
-  i3lock_deps += [pam_dep]
-endif
+pam_dep = cc.find_library('pam', required: true)
+i3lock_deps += [pam_dep]
 
 inc = include_directories('include')
 

@@ -1,34 +1,31 @@
-name: GitHub Actions
-
+name: Build and test
 on:
   push:
   pull_request:
-
+permissions:
+  contents: read
 jobs:
-  build:
-    name: build and test
-    runs-on: ubuntu-latest
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         compiler: [gcc, clang]
+        wad: ['true', 'false']
     env:
       CC: ${{ matrix.compiler }}
-
+      DOOM_CI_WAD: ${{ matrix.wad }}
     steps:
-    - uses: actions/checkout@v2
-    - run: git fetch --prune --unshallow
-    - name: fetch or build Docker container
-      run: |
-        docker build --pull --no-cache --rm -t=i3lock -f ci/Dockerfile .
-        docker run -e CC -v $PWD:/usr/src:rw i3lock /bin/sh -c 'git config --global --add safe.directory /usr/src && mkdir build && cd build && CFLAGS="-Wformat -Wformat-security -Wextra -Wno-unused-parameter -Werror" meson .. && ninja'
-  formatting:
-    name: Check formatting
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - name: Install dependencies
-      run: |
-        sudo apt-get install -y clang-format-15
-    - name: Check formatting
-      run: clang-format-15 --dry-run --Werror $(git ls-files '*.c' 'include/*.h')
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $(cat ci/packages.txt)
+      - name: Build and check without game assets
+        run: |
+          python3 tools/audit-release.py
+          sh ci/check.sh

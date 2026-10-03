@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Build against user-local headers and the installed runtime libraries."""
 import argparse
+import os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -16,17 +18,20 @@ build.mkdir(exist_ok=True)
 #define HAVE_EXPLICIT_BZERO 1
 ''' + f'#define DOOM_WAD_ASSETS {int(not arguments.without_wad)}\n')
 headers = root / ".build-deps/root/usr/include"
+if not headers.exists():
+    headers = Path("/usr/include")
 if any(not (headers / name).is_file() for name in ["ev.h", "security/pam_appl.h", "xcb/shape.h"]):
-    raise SystemExit("Missing local headers. Run: python3 tools/bootstrap-deps.py")
+    raise SystemExit("Missing development headers. Install build dependencies or run: python3 tools/bootstrap-deps.py")
 libraries = ["ev.so.4", "pam.so.0", "cairo.so.2", "xcb.so.1", "xcb-xkb.so.1",
              "xcb-xinerama.so.0", "xcb-randr.so.0", "xcb-image.so.0",
              "xcb-util.so.1", "xcb-xrm.so.0", "xcb-shape.so.0", "xkbcommon.so.0", "xkbcommon-x11.so.0"]
-command = ["cc", "-std=c11", "-D_GNU_SOURCE", "-O2", "-Wall", "-Wextra",
+command = [*shlex.split(os.environ.get("CC", "cc")), "-std=c11", "-D_GNU_SOURCE", "-O2", "-Wall", "-Wextra",
            "-fno-strict-aliasing",
            "-Wno-unused-parameter", "-Wno-missing-field-initializers", "-pthread",
+           *shlex.split(os.environ.get("CFLAGS", "")),
            "-I" + str(build), "-I" + str(root / "include"), "-I" + str(headers),
            "-I" + str(headers / "cairo"), "-I/usr/include/cairo",
-           *[str(root / name) for name in ["dpi.c", "i3lock.c", "randr.c", "unlock_indicator.c", "xcb.c", "doom.c", "melt.c", "level.c", "assets.c"]],
+           *[str(root / name) for name in ["auth.c", "dpi.c", "i3lock.c", "randr.c", "unlock_indicator.c", "xcb.c", "doom.c", "melt.c", "level.c", "assets.c"]],
            "-o", str(build / "i3lock-doom"), "-lm", "-lrt",
            *["-l:lib" + library for library in libraries]]
 subprocess.run(command, check=True)

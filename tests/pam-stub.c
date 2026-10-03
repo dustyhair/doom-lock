@@ -47,6 +47,16 @@ int pam_authenticate(pam_handle_t *handle, int flags) {
     const struct pam_message *messages[] = {&notice, &prompt};
     struct pam_response *responses = NULL;
     if (!test->password_only) {
+        /* Linux must keep password snapshots locked in the daemon child. */
+        FILE *status = fopen("/proc/self/status", "r");
+        char line[256];
+        unsigned long locked = 0;
+        if (status) {
+            while (fgets(line, sizeof(line), status))
+                if (sscanf(line, "VmLck: %lu", &locked) == 1) break;
+            fclose(status);
+        }
+        if (!locked) trace_event("password-memory-not-locked");
         trace_event("empty"); /* Fingerprint worker started. */
         fingerprint_scans++;
         if (notify(conversation, "Place your right index finger on the reader", PAM_TEXT_INFO) != PAM_SUCCESS)
