@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Build against user-local headers and the installed runtime libraries."""
+import subprocess
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[1]
+build = root / "build"
+build.mkdir(exist_ok=True)
+(build / "config.h").write_text('''#define I3LOCK_VERSION "2.16-doom"
+#define SYSCONFDIR "/etc"
+#define HAVE_STRNDUP 1
+#define HAVE_EXPLICIT_BZERO 1
+''')
+headers = root / ".build-deps/root/usr/include"
+libraries = ["ev.so.4", "pam.so.0", "cairo.so.2", "xcb.so.1", "xcb-xkb.so.1",
+             "xcb-xinerama.so.0", "xcb-randr.so.0", "xcb-image.so.0",
+             "xcb-util.so.1", "xcb-xrm.so.0", "xkbcommon.so.0", "xkbcommon-x11.so.0"]
+command = ["cc", "-std=c11", "-D_GNU_SOURCE", "-O2", "-Wall", "-Wextra",
+           "-fno-strict-aliasing",
+           "-Wno-unused-parameter", "-Wno-missing-field-initializers", "-pthread",
+           "-I" + str(build), "-I" + str(root / "include"), "-I" + str(headers),
+           "-I" + str(headers / "cairo"), "-I/usr/include/cairo",
+           *[str(root / name) for name in ["dpi.c", "i3lock.c", "randr.c", "unlock_indicator.c", "xcb.c", "doom.c"]],
+           "-o", str(build / "i3lock-doom"), "-lm", "-lrt",
+           *["-l:lib" + library for library in libraries]]
+subprocess.run(command, check=True)
+print(build / "i3lock-doom")

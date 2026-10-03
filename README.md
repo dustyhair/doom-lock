@@ -1,3 +1,13 @@
+Doom lock screen
+================
+
+This local fork of i3lock adds Doom II monster animations, hits while typing,
+a death screen for incorrect passwords, and a BFG kill for fingerprint unlock.
+Password and fingerprint verification run independently.
+
+See [DOOM-LOCK.md](DOOM-LOCK.md) for the local build, installation, and restore
+instructions. The original i3lock documentation follows.
+
 i3lock - improved screen locker
 ===============================
 [i3lock](https://i3wm.org/i3lock/) is a simple screen locker like slock.

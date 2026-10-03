@@ -87,6 +87,7 @@ cairo_dep = dependency('cairo', version: '>=1.14.4', method: 'pkg-config')
 
 i3lock_srcs = [
   'dpi.c',
+  'doom.c',
   'i3lock.c',
   'randr.c',
   'unlock_indicator.c',

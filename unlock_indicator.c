@@ -22,6 +22,7 @@
 #include "unlock_indicator.h"
 #include "randr.h"
 #include "dpi.h"
+#include "doom.h"
 
 #define BUTTON_RADIUS 90
 #define BUTTON_SPACE (BUTTON_RADIUS + 5)
@@ -221,7 +222,7 @@ void draw_image(xcb_pixmap_t bg_pixmap, uint32_t *resolution) {
         }
     }
 
-    if (unlock_indicator &&
+    if (!doom_enabled() && unlock_indicator &&
         (unlock_state >= STATE_KEY_PRESSED || auth_state > STATE_AUTH_IDLE)) {
         cairo_scale(ctx, scaling_factor, scaling_factor);
         /* Draw a (centered) circle with transparent background. */
@@ -383,7 +384,16 @@ void draw_image(xcb_pixmap_t bg_pixmap, uint32_t *resolution) {
         }
     }
 
-    if (xr_screens > 0) {
+    if (doom_enabled()) {
+        if (xr_screens > 0) {
+            for (int monitor = 0; monitor < xr_screens; monitor++) {
+                Rect r = xr_resolutions[monitor];
+                doom_draw(xcb_ctx, r.x, r.y, r.width, r.height);
+            }
+        } else {
+            doom_draw(xcb_ctx, 0, 0, resolution[0], resolution[1]);
+        }
+    } else if (xr_screens > 0) {
         /* Composite the unlock indicator in the middle of each screen. */
         for (int screen = 0; screen < xr_screens; screen++) {
             int x = (xr_resolutions[screen].x + ((xr_resolutions[screen].width / 2) - (button_diameter_physical / 2)));
