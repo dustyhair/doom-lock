@@ -29,7 +29,7 @@ static unsigned char *wad;
 static lump_t *lumps;
 static size_t lump_count;
 static const unsigned char *palette;
-static image_t images[256];
+static image_t images[384];
 static size_t image_count;
 
 static uint16_t read16(const unsigned char *data) {
@@ -269,6 +269,70 @@ static bool cache_frames(cairo_surface_t **frames, const char names[][64], int c
     }
     return valid;
 }
+static cairo_surface_t *flat_image(const char *name) {
+    lump_t *entry = find_lump(name);
+    if (!entry || entry->size != 4096) {
+        return NULL;
+    }
+    cairo_surface_t *surface = new_image(64, 64, true);
+    if (!surface) {
+        return NULL;
+    }
+    uint32_t *pixels = (uint32_t *)cairo_image_surface_get_data(surface);
+    int stride = cairo_image_surface_get_stride(surface) / 4;
+    for (int y = 0; y < 64; y++) {
+        for (int x = 0; x < 64; x++) {
+            pixels[y * stride + x] = color_pixel(entry->data[y * 64 + x]);
+        }
+    }
+    cairo_surface_mark_dirty(surface);
+    return surface;
+}
+
+static bool load_ui(void) {
+    /* UI graphics are optional so older PNG sets and complete sprite-only
+     * PWADs keep working. Present but malformed patches still fail validation. */
+    for (int code = 33; code <= 95; code++) {
+        char lump[32], name[64];
+        snprintf(lump, sizeof(lump), "STCFN%03d", code);
+        lump_t *entry = find_lump(lump);
+        if (!entry) {
+            continue;
+        }
+        int left, top;
+        cairo_surface_t *source = patch(entry, &left, &top);
+        if (!source) {
+            return false;
+        }
+        int width = cairo_image_surface_get_width(source), height = cairo_image_surface_get_height(source);
+        if (width > 32 || height > 32 || left < -32 || left > 32 || top < -32 || top > 32) {
+            cairo_surface_destroy(source);
+            return false;
+        }
+        int canvas_height = height - top > 7 ? height - top : 7;
+        cairo_surface_t *glyph = new_image(width, canvas_height, false);
+        if (glyph) {
+            cairo_t *ctx = cairo_create(glyph);
+            cairo_set_source_surface(ctx, source, -left, -top);
+            cairo_paint(ctx);
+            if (cairo_status(ctx) != CAIRO_STATUS_SUCCESS) {
+                cairo_surface_destroy(glyph);
+                glyph = NULL;
+            }
+            cairo_destroy(ctx);
+        }
+        cairo_surface_destroy(source);
+        snprintf(name, sizeof(name), "ui/font-%03d.png", code);
+        if (!cache_image(name, glyph)) {
+            return false;
+        }
+    }
+    if (find_lump("GRNROCK") && !cache_image("ui/stone.png", flat_image("GRNROCK"))) {
+        return false;
+    }
+    return true;
+}
+
 static bool load_sprites(void) {
     int left, top;
     if (!cache_image("player-dead.png", patch(find_lump("STFDEAD0"), &left, &top))) {
@@ -412,25 +476,9 @@ static bool load_level(void) {
         }
     }
     for (size_t i = 0; i < sizeof(flats) / sizeof(flats[0]); i++) {
-        lump_t *entry = find_lump(flats[i]);
-        if (!entry || entry->size != 4096) {
-            return false;
-        }
-        cairo_surface_t *surface = new_image(64, 64, true);
-        if (!surface) {
-            return false;
-        }
-        uint32_t *pixels = (uint32_t *)cairo_image_surface_get_data(surface);
-        int stride = cairo_image_surface_get_stride(surface) / 4;
-        for (int y = 0; y < 64; y++) {
-            for (int x = 0; x < 64; x++) {
-                pixels[y * stride + x] = color_pixel(entry->data[y * 64 + x]);
-            }
-        }
-        cairo_surface_mark_dirty(surface);
         char name[64];
         snprintf(name, sizeof(name), "level/%s.png", flats[i]);
-        if (!cache_image(name, surface)) {
+        if (!cache_image(name, flat_image(flats[i]))) {
             return false;
         }
     }
@@ -504,7 +552,7 @@ bool assets_open(const char *wad_path) {
         goto invalid;
     }
     palette = playpal->data;
-    if (!load_sprites() || !load_level()) {
+    if (!load_sprites() || !load_level() || !load_ui()) {
         goto invalid;
     }
     return true;

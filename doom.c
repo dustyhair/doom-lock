@@ -10,6 +10,7 @@
 #include "melt.h"
 #include "level.h"
 #include "assets.h"
+#include "hud.h"
 #include "unlock_indicator.h"
 
 #define MAX_FRAMES 10
@@ -113,6 +114,7 @@ bool doom_init(void) {
             }
         }
     }
+    hud_init(folder);
     if (!level_init(folder)) {
         goto done;
     }
@@ -158,6 +160,7 @@ void doom_close(void) {
         bfg_projectile[i] = NULL;
     }
     bfg_target = NULL; /* Borrowed from the monster's walk frames. */
+    hud_close();
     level_close();
     enabled = false;
 }
@@ -317,13 +320,10 @@ void doom_start(struct ev_loop *loop) {
 }
 
 static void centered_text(cairo_t *ctx, const char *text, double center, double y,
-                          double size, double r, double g, double b) {
-    cairo_text_extents_t extents;
-    cairo_set_font_size(ctx, size);
-    cairo_text_extents(ctx, text, &extents);
-    cairo_set_source_rgb(ctx, r, g, b);
-    cairo_move_to(ctx, center - extents.width / 2 - extents.x_bearing, y);
-    cairo_show_text(ctx, text);
+                          double size, hud_color_t color) {
+    double x1, y1, x2, y2;
+    cairo_clip_extents(ctx, &x1, &y1, &x2, &y2);
+    hud_text(ctx, text, center, y, size, fmax(1, x2 - x1 - 64), color);
 }
 
 void doom_draw(cairo_t *ctx, int x, int y, int width, int height, const doom_ui_t *ui) {
@@ -347,7 +347,7 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height, const doom_ui_
         cairo_rectangle(ctx, x, y, width, height);
         cairo_fill(ctx);
         double middle = y + height / 2.0;
-        centered_text(ctx, "YOU DIED", center, middle - 130, width < 700 ? 40 : 64, 0.85, 0.08, 0.04);
+        centered_text(ctx, "YOU DIED", center, middle - 130, width < 700 ? 40 : 64, HUD_RED);
         int face_width = cairo_image_surface_get_width(player_dead);
         int face_height = cairo_image_surface_get_height(player_dead);
         cairo_save(ctx);
@@ -357,10 +357,10 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height, const doom_ui_
         cairo_pattern_set_filter(cairo_get_source(ctx), CAIRO_FILTER_NEAREST);
         cairo_paint(ctx);
         cairo_restore(ctx);
-        centered_text(ctx, "ACCESS DENIED", center, middle + 145, 20, 0.8, 0.6, 0.5);
-        centered_text(ctx, "TYPE TO TRY AGAIN / OR SCAN FINGER", center, middle + 185, 14, 0.65, 0.45, 0.35);
+        centered_text(ctx, "ACCESS DENIED", center, middle + 145, 20, HUD_GOLD);
+        centered_text(ctx, "TYPE TO TRY AGAIN / OR SCAN FINGER", center, middle + 185, 14, HUD_GOLD);
         if (ui->fingerprint_notice[0]) {
-            centered_text(ctx, ui->fingerprint_notice, center, middle + 220, 13, 0.7, 0.6, 0.5);
+            centered_text(ctx, ui->fingerprint_notice, center, middle + 220, 13, HUD_GOLD);
         }
         cairo_restore(ctx);
         return;
@@ -425,20 +425,40 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height, const doom_ui_
         cairo_paint(ctx);
         cairo_restore(ctx);
     }
-    cairo_set_source_rgba(ctx, 0.02, 0.025, 0.03, 0.88);
-    cairo_rectangle(ctx, x, y + height - 100, width, 100);
-    cairo_fill(ctx);
-    centered_text(ctx, monster->name, center, y + height - 80, 14, 0.85, 0.65, 0.38);
-    const char *status = authenticated
-                             ? (bfg_kill ? "BFG 9000 / ACCESS GRANTED" : "ACCESS GRANTED")
-                             : ui->status;
-    centered_text(ctx, status, center, y + height - 55, 15,
-                  authenticated ? 0.35 : 0.80, authenticated ? 0.90 : 0.85, 0.70);
-    if (!authenticated && ui->fingerprint_notice[0]) {
-        centered_text(ctx, ui->fingerprint_notice, center, y + height - 30, 13, 0.7, 0.8, 0.7);
+    bool password_dialog = !authenticated && (ui->password_entered || ui->password_pending);
+    double panel_width = fmin(width - 32, 720);
+    double panel_height = password_dialog ? 168 : 116;
+    double panel_x = center - panel_width / 2;
+    double panel_y = y + height - panel_height - 16;
+    hud_panel(ctx, panel_x, panel_y, panel_width, panel_height);
+    double text_width = panel_width - 40;
+    hud_text(ctx, monster->name, center, panel_y + 28, 14, text_width, HUD_GOLD);
+    if (password_dialog) {
+        hud_text(ctx, "ENTER PASSWORD", center, panel_y + 53, 21, text_width, HUD_RED);
+        /* Fixed mask: the renderer never receives password bytes or length. */
+        double field_width = fmin(panel_width - 64, 320);
+        cairo_set_source_rgb(ctx, 0.015, 0.01, 0.005);
+        cairo_rectangle(ctx, center - field_width / 2, panel_y + 62, field_width, 36);
+        cairo_fill(ctx);
+        hud_text(ctx, ui->password_pending ? "CHECKING..." : "********", center,
+                 panel_y + 87, 21, field_width - 40, HUD_GOLD);
+        if (!ui->password_pending && fmod(ev_time(), 1.0) < 0.5) {
+            hud_text(ctx, "_", center + field_width / 2 - 28, panel_y + 87, 21, 24, HUD_GOLD);
+        }
+        hud_text(ctx, ui->password_pending ? "VERIFYING PASSWORD" : "ENTER TO UNLOCK / ESC TO CLEAR",
+                 center, panel_y + 121, 14, text_width, HUD_RED);
+        hud_text(ctx, ui->fingerprint_notice, center, panel_y + 147, 14, text_width, HUD_GOLD);
+    } else {
+        const char *status = authenticated
+                                 ? (bfg_kill ? "BFG 9000 / ACCESS GRANTED" : "ACCESS GRANTED")
+                                 : ui->status;
+        hud_text(ctx, status, center, panel_y + 59, 21, text_width, authenticated ? HUD_GREEN : HUD_RED);
+        if (!authenticated) {
+            hud_text(ctx, ui->fingerprint_notice, center, panel_y + 86, 14, text_width, HUD_GOLD);
+        }
     }
     if (ui->modifiers) {
-        centered_text(ctx, ui->modifiers, center, y + height - 10, 11, 0.9, 0.55, 0.25);
+        hud_text(ctx, ui->modifiers, center, panel_y + panel_height - 8, 7, text_width, HUD_GOLD);
     }
     cairo_restore(ctx);
 }

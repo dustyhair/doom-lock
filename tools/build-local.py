@@ -31,7 +31,7 @@ command = [*shlex.split(os.environ.get("CC", "cc")), "-std=c11", "-D_GNU_SOURCE"
            *shlex.split(os.environ.get("CFLAGS", "")),
            "-I" + str(build), "-I" + str(root / "include"), "-I" + str(headers),
            "-I" + str(headers / "cairo"), "-I/usr/include/cairo",
-           *[str(root / name) for name in ["auth.c", "dpi.c", "i3lock.c", "randr.c", "unlock_indicator.c", "xcb.c", "doom.c", "melt.c", "level.c", "assets.c"]],
+           *[str(root / name) for name in ["auth.c", "hud.c", "dpi.c", "i3lock.c", "randr.c", "unlock_indicator.c", "xcb.c", "doom.c", "melt.c", "level.c", "assets.c"]],
            "-o", str(build / "i3lock-doom"), "-lm", "-lrt",
            *["-l:lib" + library for library in libraries]]
 subprocess.run(command, check=True)

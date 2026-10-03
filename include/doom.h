@@ -8,6 +8,7 @@ typedef struct {
     const char *status;
     const char *fingerprint_notice;
     const char *modifiers;
+    bool password_entered, password_pending;
 } doom_ui_t;
 
 /* One scene per process. The scene owns its Cairo surfaces and animation timers.

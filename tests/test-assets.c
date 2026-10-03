@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
     }
 #if DOOM_WAD_ASSETS
     size_t count = image_count;
-    image_t retained[256];
+    image_t retained[sizeof(images) / sizeof(images[0])];
     memcpy(retained, images, sizeof(retained));
     for (size_t i = 0; i < count; i++) {
         retained[i].surface = cairo_surface_reference(retained[i].surface);

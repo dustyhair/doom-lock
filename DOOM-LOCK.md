@@ -6,7 +6,8 @@ user-supplied Doom II-compatible WAD or from an extracted PNG folder. WADs and
 extracted game assets are ignored by Git; the executable contains no artwork.
 
 The WAD loader reads the palette, sprite patches, patch origins, wall texture
-definitions, and floor/ceiling flats into memory before the lock window opens.
+definitions, floor/ceiling flats, and optional HUD graphics into memory before
+the lock window opens.
 It produces the same cropped frames as PNG extraction, then releases the WAD
 buffer. There is no extraction cache or WAD I/O during animation. Both IWADs and
 complete standalone PWADs are accepted. The file must contain all required Doom
@@ -79,6 +80,14 @@ can run at a time, and retries stop as soon as authentication succeeds.
 Enter with a typed password starts a separate password check immediately, while
 the fingerprint scan continues independently. Enter with no password starts a
 fingerprint check if one is not already running.
+
+The bottom panel uses Doom's original `STCFN033` through `STCFN095` bitmap font
+and `GRNROCK` stone texture. Red text, gold highlights, and a beveled border frame
+the status. Typing expands it into a password dialog with a blinking underscore
+and a fixed mask that does not expose password length. Checking status replaces
+the mask while PAM runs; fingerprint instructions remain below the field.
+The graphics load from the WAD or extracted `ui/` PNG folder. Missing glyphs use
+the system font, and missing stone uses a plain frame. No font artwork is bundled.
 
 Fingerprint PAM uses `/etc/pam.d/i3lock`, which includes the existing login stack.
 For password PAM, the launcher validates the current system policy and copies it

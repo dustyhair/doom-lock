@@ -106,6 +106,25 @@ def extract(wad_path, destination):
 
     destination.mkdir(parents=True, exist_ok=True)
     extract_level(lumps, palette, patch, destination / "level")
+    ui = destination / "ui"
+    ui.mkdir(exist_ok=True)
+    for code in range(33, 96):
+        name = f"STCFN{code:03d}"
+        if name not in lumps:
+            continue
+        glyph = patch(name, False)
+        width, height, left, top = struct.unpack_from("<hhhh", lumps[name])
+        if width > 32 or height > 32 or abs(left) > 32 or abs(top) > 32:
+            raise ValueError(f"Invalid font patch bounds: {name}")
+        canvas = Image.new("RGBA", (glyph.width, max(7, height - top)))
+        canvas.paste(glyph, (-left, -top))
+        canvas.save(ui / f"font-{code:03d}.png")
+    if "GRNROCK" in lumps:
+        if len(lumps["GRNROCK"]) != 4096:
+            raise ValueError("Invalid flat size: GRNROCK")
+        stone = Image.frombytes("P", (64, 64), lumps["GRNROCK"])
+        stone.putpalette(palette)
+        stone.convert("RGB").save(ui / "stone.png")
     patch("STFDEAD0", False).save(destination / "player-dead.png")
     bfg = [patch("BFE2" + frame + "0") for frame in "ABCD"]
     bounds = Image.new("L", bfg[0].size)

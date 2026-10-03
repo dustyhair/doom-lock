@@ -73,6 +73,8 @@ for definition in definitions:
     position += len(definition)
 table = struct.pack("<I", len(definitions)) + struct.pack("<" + "I" * len(offsets), *offsets) + b"".join(definitions)
 lumps.append(("TEXTURE1", table))
+lumps.extend((f"STCFN{code:03d}", patch(8, 7, 0, 0)) for code in range(33, 96))
+lumps.append(("GRNROCK", bytes(i % 256 for i in range(4096))))
 lumps.extend((name, bytes(i % 256 for i in range(4096))) for name in extract.FLATS)
 valid = output / "generated.wad"
 valid.write_bytes(make_wad(lumps))
@@ -113,6 +115,8 @@ cases = {
     "texture offset overflow": replace_lump("TEXTURE1", change(table, 4, struct.pack("<I", 0xffffffff))),
     "texture patch index overflow": replace_lump("TEXTURE1", bad_texture),
     "texture patch list truncated": replace_lump("TEXTURE1", table[:-1]),
+    "invalid optional font": replace_lump("STCFN065", b"\0" * 4),
+    "invalid UI flat": replace_lump("GRNROCK", b"\0" * 4095),
     "required sprite missing": make_wad([(name, value) for name, value in lumps if name != "BFS1A0"]),
 }
 for name, content in cases.items():
@@ -126,6 +130,13 @@ complete_pwad = output / "complete.pwad"
 complete_pwad.write_bytes(b"PWAD" + raw[4:])
 subprocess.run([str(binary), "--validate", str(complete_pwad)], check=True)
 print("PASS: complete standalone PWAD accepted")
+
+# Old content sets without UI graphics remain valid and use the fallback HUD.
+no_ui = output / "without-ui.wad"
+no_ui.write_bytes(make_wad([(name, value) for name, value in lumps
+                           if not name.startswith("STCFN") and name != "GRNROCK"]))
+subprocess.run([str(binary), "--validate", str(no_ui)], check=True)
+print("PASS: WAD without optional font and panel graphics remains valid")
 
 # Last duplicate lump wins, including the palette used by every decoded image.
 duplicate = output / "duplicate.wad"

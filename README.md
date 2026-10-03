@@ -5,6 +5,9 @@ The camera retreats through a textured maze while a random monster follows you.
 Typing hits the monster. A correct password kills it, a fingerprint match fires
 a BFG into it, and a wrong password melts the scene into a red death screen.
 Success ends with the classic column melt revealing your live desktop.
+The bottom HUD uses Doom's red bitmap lettering and a stone frame. Typing opens
+a password dialog with a fixed mask, blinking cursor, and verification status;
+fingerprint instructions stay visible below it.
 
 ## See it
 
@@ -37,6 +40,8 @@ or game binaries are included in this repository or its executable. The GIFs
 are rendered demonstrations. Both IWAD and complete standalone PWAD files work;
 Doom I files and partial mod PWADs are unsupported. The maze is generated rather
 than loaded from the game's map geometry.
+The font and panel texture also come from your content. Older PNG folders or
+WADs without those optional graphics use a system font and plain frame.
 
 You also need system `i3lock`, Python 3.9 or newer, and a supported fingerprint
 reader enrolled through fprintd. System i3lock supplies `/etc/pam.d/i3lock`.

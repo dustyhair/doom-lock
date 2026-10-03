@@ -9,7 +9,8 @@ plugin system or separate graphics engine.
 | `i3lock.c` | Input buffer, verification requests, retry timers, lock lifecycle, and authentication results |
 | `auth.c` | Linux PAM handles, locked password snapshots, worker threads, and conversation messages |
 | `unlock_indicator.c` | X11 frame composition and the adapter that passes UI text into the scene |
-| `doom.c` | Monster animation, hits, BFG targeting, HUD drawing, and success/failure transitions |
+| `doom.c` | Monster animation, hits, BFG targeting, HUD layout, and success/failure transitions |
+| `hud.c` | Optional bitmap-font ownership, tinted glyphs, text fitting, and framed panel drawing |
 | `level.c` | Generated maze, camera route, CPU raycasting, and monster projection/occlusion |
 | `assets.c` | Bounded WAD decoding and external PNG loading |
 | `melt.c` | Captured frame strips, melt timing, and authenticated desktop reveal through X11 SHAPE |
@@ -47,9 +48,9 @@ policy review and negative tests.
 ## Content and rendering
 
 Startup loads all required images before opening the lock window or grabbing
-input. `assets_image` returns an owned Cairo reference. `doom.c` and `level.c`
-retain those references, then `assets_close` releases the WAD bytes and loader
-cache. No content file reads occur during animation. Scene cleanup handles
+input. `assets_image` returns an owned Cairo reference. `doom.c`, `level.c`, and
+`hud.c` retain their references, then `assets_close` releases the WAD bytes and
+loader cache. No content file reads occur during animation. Scene cleanup handles
 partial loading failures as well as normal exit.
 
 The catalogue in `include/monsters.def` is simple comma-separated `MONSTER` rows.
@@ -63,8 +64,14 @@ animation. Camera motion uses elapsed time, while wall-first rendering avoids
 sampling hidden floor and ceiling pixels. The renderer caches the maze frame
 until the camera or viewport changes.
 
-`doom_draw` receives borrowed UI text through `doom_ui_t`; it does not read
-password or PAM state. Success and failure enter the scene through explicit
+The optional HUD font uses `STCFN033` through `STCFN095`; the panel uses the
+`GRNROCK` flat. `hud.c` prepares gold and green glyph variants once at startup,
+then draws glyphs with nearest-neighbor filtering and bounded rectangles.
+Missing UI graphics keep the system-font and plain-frame fallback.
+
+`doom_draw` receives borrowed UI text and input-present/checking flags through
+`doom_ui_t`. It never receives password bytes or length. Its mask stays fixed
+while typing. Success and failure enter the scene through explicit
 functions. `melt.c` only changes the window's bounding shape after authentication
 has succeeded. Failure melts keep the full window opaque.
 

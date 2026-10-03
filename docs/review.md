@@ -34,8 +34,8 @@ ownership and the threading and resource rules for future changes.
 - GCC and Clang Meson builds on Ubuntu 24.04, with WAD loading on and off.
 - PAM conversation cleanup under ASan/UBSan and a separate native post-fork memory-lock check.
 - Supported and rejected PAM policies, isolated installer source selection, and launcher fallback tests.
-- 205 WAD images and all 14 monster origins compared pixel-for-pixel with local PNG extraction.
-- 21 malformed or incomplete WAD cases under ASan/UBSan, duplicate-lump precedence, and standalone PWAD loading.
+- 269 WAD images, including the optional HUD font and stone texture, and all 14 monster origins compared pixel-for-pixel with local PNG extraction.
+- 23 malformed or incomplete WAD cases under ASan/UBSan, duplicate-lump precedence, standalone PWAD loading, and missing optional UI graphics.
 - Five maze styles, each with a 23-minute simulated tour, all monster projections, and changing viewport dimensions under ASan/UBSan.
 - Isolated X11 authentication tests for password and fingerprint success, retries, queued edits, Compose input, full input buffers, failure opacity, BFG effects, live desktop reveal, input grabs, and daemonization.
 - Compositor tests with Picom and private, generated-content checks that require no game WAD.

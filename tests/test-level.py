@@ -15,7 +15,7 @@ subprocess.run([
     "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
     "-I" + str(root / "include"), "-I" + str(root / "build"), "-I" + str(headers),
     "-I" + str(headers / "cairo"), "-I/usr/include/cairo",
-    str(root / "tests/test-level.c"), str(root / "assets.c"),
+    str(root / "tests/test-level.c"), str(root / "assets.c"), str(root / "hud.c"),
     "-o", str(binary), "-l:libcairo.so.2", "-l:libev.so.4", "-l:libfontconfig.so.1", "-lm",
 ], check=True)
 seen = set()

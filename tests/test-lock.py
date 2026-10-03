@@ -76,7 +76,7 @@ def shape_and_grabs():
 def screenshot(name):
     path = output / name
     run("import", "-window", "root", "-define", "png:compression-level=0",
-        "-define", "png:compression-filter=0", str(path))
+        "-define", "png:compression-filter=0", "-define", "png:color-type=2", str(path))
     return Image.open(path).convert("RGB")
 
 
@@ -100,6 +100,7 @@ try:
     assert shape_and_grabs() == (1, 1280 * 1024, 1, 1), "Desktop exposed or grabs missing before authentication"
     screenshot("lock-screen.png")
     run("xdotool", "type", "--clearmodifiers", "--delay", "35", "doom-test")
+    screenshot("password-dialog.png")
     submitted = time.monotonic()
     run("xdotool", "key", "Return")
     wait_for(lambda: "match" in trace_lines(), timeout=0.8)
@@ -108,9 +109,7 @@ try:
     count, area, keyboard, pointer = shape_and_grabs()
     assert count > 1 and 0 < area < 1280 * 1024, "Success did not create staggered falling columns"
     assert (keyboard, pointer) == (1, 1), "Success melt released input grabs early"
-    time.sleep(0.5)
-    melt = screenshot("success-melt.png")
-    assert melt.getpixel((10, 10)) == (36, 87, 128), "Success melt did not reveal the desktop"
+    wait_for(lambda: screenshot("success-melt.png").getpixel((10, 10)) == (36, 87, 128), timeout=1)
     desktop.stdin.write(b"805724\n")
     desktop.stdin.flush()
     live = screenshot("success-melt-live.png")
@@ -153,18 +152,20 @@ try:
     run("xdotool", "key", "Return")
     wait_for(lambda: "wrong" in trace_lines(), timeout=0.8)
     wait_for(lambda: "denied" in trace_lines())
-    time.sleep(0.4)
-    screenshot("denied.png")
     assert shape_and_grabs() == (1, 1280 * 1024, 1, 1), "Failure melt exposed the desktop or released input"
-    time.sleep(0.25)
-    mixed = screenshot("failure-melt.png")
-    assert mixed.getpixel((10, 10))[0] > mixed.getpixel((10, 10))[1] * 4
-    assert mixed.getpixel((10, 1000)) != mixed.getpixel((10, 10)), "Failure skipped the falling lock-screen columns"
+    def failure_melting():
+        # Observe a mixed frame while the red screen is replacing the scene.
+        # Capture cost varies with content and compositor; fixed sleeps can
+        # skip the entire transition on a busy CI worker.
+        mixed = screenshot("failure-melt.png")
+        red, green, blue = mixed.getpixel((10, 10))
+        return red > green * 4 and red > blue * 4 and mixed.getpixel((10, 1000)) != (red, green, blue)
+    wait_for(failure_melting, timeout=1.5)
+    assert shape_and_grabs() == (1, 1280 * 1024, 1, 1), "Failure melt exposed the desktop or released input"
     run("xdotool", "key", "Escape")
     time.sleep(2.2)
     assert process.poll() is None, "Failed authentication or Escape unlocked the screen"
-    screenshot("death-screen.png")
-    red, green, blue = Image.open(output / "death-screen.png").getpixel((10, 10))[:3]
+    red, green, blue = screenshot("death-screen.png").getpixel((10, 10))
     assert red > green * 4 and red > blue * 4, "Wrong password did not show persistent death screen"
     run("xdotool", "type", "--clearmodifiers", "--delay", "35", "doom-test")
     run("xdotool", "key", "Return")
@@ -276,8 +277,7 @@ try:
     run("xdotool", "key", "Return")
     wait_for(lambda: "denied" in trace_lines())
     time.sleep(0.65)
-    screenshot("queued-denied.png")
-    red, green, blue = Image.open(output / "queued-denied.png").getpixel((10, 10))[:3]
+    red, green, blue = screenshot("queued-denied.png").getpixel((10, 10))
     assert red > green * 4 and red > blue * 4, "Queued edit must occur after the failure screen appears"
     run("xdotool", "type", "t")
     wait_for(lambda: "match" in trace_lines())
