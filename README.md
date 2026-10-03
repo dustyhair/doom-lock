@@ -6,8 +6,8 @@ Typing hits the monster. A correct password kills it, a fingerprint match fires
 a BFG into it, and a wrong password melts the scene into a red death screen.
 Success ends with the classic column melt revealing your live desktop.
 The bottom HUD uses Doom's red bitmap lettering and a stone frame. Typing opens
-a password dialog with a fixed mask, blinking cursor, and verification status;
-fingerprint instructions stay visible below it.
+a password dialog with a demonic rune per character, a blinking cursor, and
+verification status. Fingerprint instructions stay visible below it.
 
 ## See it
 

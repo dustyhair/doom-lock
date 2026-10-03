@@ -69,9 +69,14 @@ The optional HUD font uses `STCFN033` through `STCFN095`; the panel uses the
 then draws glyphs with nearest-neighbor filtering and bounded rectangles.
 Missing UI graphics keep the system-font and plain-frame fallback.
 
-`doom_draw` receives borrowed UI text and input-present/checking flags through
-`doom_ui_t`. It never receives password bytes or length. Its mask stays fixed
-while typing. Success and failure enter the scene through explicit
+`doom_draw` receives borrowed UI text, a UTF-8 character count, and a checking flag
+through `doom_ui_t`. Password bytes stay in `i3lock.c`; its count accessor derives
+the mask length from the current buffer so edits and clearing stay consistent.
+`hud_password` draws original pixel runes chosen by a per-lock visual seed and
+character index, independently of password values. Long masks show a bounded,
+scrolling tail, and the cursor follows its fitted width. The runes also work
+with the system-font fallback, without extra artwork.
+Success and failure enter the scene through explicit
 functions. `melt.c` only changes the window's bounding shape after authentication
 has succeeded. Failure melts keep the full window opaque.
 

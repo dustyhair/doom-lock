@@ -425,7 +425,7 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height, const doom_ui_
         cairo_paint(ctx);
         cairo_restore(ctx);
     }
-    bool password_dialog = !authenticated && (ui->password_entered || ui->password_pending);
+    bool password_dialog = !authenticated && (ui->password_characters > 0 || ui->password_pending);
     double panel_width = fmin(width - 32, 720);
     double panel_height = password_dialog ? 168 : 116;
     double panel_x = center - panel_width / 2;
@@ -435,17 +435,22 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height, const doom_ui_
     hud_text(ctx, monster->name, center, panel_y + 28, 14, text_width, HUD_GOLD);
     if (password_dialog) {
         hud_text(ctx, "ENTER PASSWORD", center, panel_y + 53, 21, text_width, HUD_RED);
-        /* Fixed mask: the renderer never receives password bytes or length. */
+        /* Only the character count reaches the renderer, never password bytes. */
         double field_width = fmin(panel_width - 64, 320);
         cairo_set_source_rgb(ctx, 0.015, 0.01, 0.005);
         cairo_rectangle(ctx, center - field_width / 2, panel_y + 62, field_width, 36);
         cairo_fill(ctx);
-        hud_text(ctx, ui->password_pending ? "CHECKING..." : "********", center,
-                 panel_y + 87, 21, field_width - 40, HUD_GOLD);
-        if (!ui->password_pending && fmod(ev_time(), 1.0) < 0.5) {
-            hud_text(ctx, "_", center + field_width / 2 - 28, panel_y + 87, 21, 24, HUD_GOLD);
+        double mask_width = 0;
+        if (ui->password_pending && !ui->password_characters) {
+            hud_text(ctx, "CHECKING...", center, panel_y + 87, 21, field_width - 40, HUD_GOLD);
+        } else {
+            mask_width = hud_password(ctx, ui->password_characters, center,
+                                      panel_y + 87, 21, field_width - 64);
         }
-        hud_text(ctx, ui->password_pending ? "VERIFYING PASSWORD" : "ENTER TO UNLOCK / ESC TO CLEAR",
+        if (ui->password_characters && (ev_time() < hit_until || fmod(ev_time(), 1.0) < 0.5)) {
+            hud_text(ctx, "_", center + mask_width / 2 + 12, panel_y + 87, 21, 24, HUD_GOLD);
+        }
+        hud_text(ctx, ui->password_pending ? (ui->password_characters ? "CHECKING / ENTER TO QUEUE RETRY" : "VERIFYING PASSWORD") : "ENTER TO UNLOCK / ESC TO CLEAR",
                  center, panel_y + 121, 14, text_width, HUD_RED);
         hud_text(ctx, ui->fingerprint_notice, center, panel_y + 147, 14, text_width, HUD_GOLD);
     } else {

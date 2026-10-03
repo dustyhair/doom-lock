@@ -80,6 +80,36 @@ def screenshot(name):
     return Image.open(path).convert("RGB")
 
 
+def password_runes(name, expected):
+    image = screenshot(name)
+
+    def gold(pixel):
+        red, green, blue = pixel
+        return red > 80 and green > 50 and red > green and green > blue * 1.2
+
+    # The upper four rows of the short mask exclude the blinking underscore.
+    # Count separated gold symbols in the input field, not changing scene pixels.
+    columns = []
+    for x in range(480, 800):
+        columns.append(any(gold(image.getpixel((x, y))) for y in range(906, 918)))
+    spans = []
+    for offset, present in enumerate(columns):
+        if present and (offset == 0 or not columns[offset - 1]):
+            spans.append([offset + 480, offset + 481])
+        elif present:
+            spans[-1][1] = offset + 481
+    assert len(spans) == expected, f"Expected {expected} password runes, saw {len(spans)}"
+    symbols = []
+    for left, right in spans:
+        pixels = image.crop((left, 906, right, 927))
+        shape = Image.new("1", pixels.size)
+        # Compare shape independently of the compositor's initial fade-in.
+        shape.putdata([gold(pixels.getpixel((x, y)))
+                       for y in range(pixels.height) for x in range(pixels.width)])
+        symbols.append(shape)
+    return symbols
+
+
 process = None
 desktop = None
 compositor = None
@@ -99,8 +129,24 @@ try:
     process = start("password")
     assert shape_and_grabs() == (1, 1280 * 1024, 1, 1), "Desktop exposed or grabs missing before authentication"
     screenshot("lock-screen.png")
+    run("xdotool", "type", "d")
+    first = password_runes("password-one.png", 1)
+    run("xdotool", "type", "oo")
+    three = password_runes("password-three.png", 3)
+    assert not ImageChops.difference(first[0], three[0]).getbbox(), "Existing rune changed while typing"
+    run("xdotool", "key", "BackSpace")
+    two = password_runes("password-backspace.png", 2)
+    assert all(not ImageChops.difference(a, b).getbbox() for a, b in zip(two, three)), "Backspace changed earlier runes"
+    run("xdotool", "key", "Escape")
+    run("xdotool", "type", "x")
+    password_runes("password-after-escape.png", 1)
+    run("xdotool", "key", "ctrl+u")
+    run("xdotool", "type", "y")
+    password_runes("password-after-clear.png", 1)
+    run("xdotool", "key", "Escape")
     run("xdotool", "type", "--clearmodifiers", "--delay", "35", "doom-test")
-    screenshot("password-dialog.png")
+    password_runes("password-dialog.png", 9)
+    print("PASS: one stable rune per character; Backspace, Escape, and Ctrl+U update the mask")
     submitted = time.monotonic()
     run("xdotool", "key", "Return")
     wait_for(lambda: "match" in trace_lines(), timeout=0.8)
@@ -220,13 +266,18 @@ try:
     print("PASS: Backspace corrects password input during a fingerprint scan")
 
     compose = output / "XCompose"
-    compose.write_text('<Multi_key> <a> <a> : "do"\n' +
+    compose.write_text('<Multi_key> <a> <a> : "do"\n' + '<Multi_key> <c> <c> : "é"\n' +
                        '<Multi_key> <b> <b> : "' + 'x' * 200 + '"\n')
     environment["XCOMPOSEFILE"] = str(compose)
     environment["LC_ALL"] = "C.UTF-8"
     process = start("compose-input")
     run("xdotool", "key", "Multi_key", "b", "b")
     run("xdotool", "key", "Multi_key", "a", "a")
+    password_runes("password-compose.png", 2)
+    run("xdotool", "key", "Multi_key", "c", "c")
+    password_runes("password-unicode.png", 3)
+    run("xdotool", "key", "BackSpace")
+    password_runes("password-unicode-backspace.png", 2)
     run("xdotool", "type", "om-test")
     run("xdotool", "key", "Return")
     wait_for(lambda: "match" in trace_lines(), timeout=0.8)
@@ -234,6 +285,7 @@ try:
     assert process.returncode == 0, "Compose input overflowed or lost the valid sequence"
     environment.pop("XCOMPOSEFILE")
     print("PASS: long Compose expansion is rejected safely; short composed input authenticates")
+    print("PASS: a composed UTF-8 character adds one rune and Backspace removes it")
 
     process = start("full-input-buffer")
     run("xdotool", "type", "--delay", "0", "x" * 600)
@@ -260,6 +312,7 @@ try:
     run("xdotool", "key", "Return")
     wait_for(lambda: "wrong" in trace_lines(), timeout=0.8)
     run("xdotool", "type", "--delay", "5", "doom-tesx")
+    password_runes("password-queued.png", 9)
     run("xdotool", "key", "Return")
     run("xdotool", "key", "BackSpace")
     run("xdotool", "type", "t")

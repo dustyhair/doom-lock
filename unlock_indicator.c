@@ -403,7 +403,13 @@ void draw_image(xcb_pixmap_t bg_pixmap, uint32_t *resolution) {
         } else if (auth_state == STATE_AUTH_WRONG) {
             status = "ACCESS DENIED / TRY AGAIN";
         }
-        doom_ui_t ui = {status, fingerprint_status, modifier_string, input_position > 0, password_verifying};
+        doom_ui_t ui = {
+            .status = status,
+            .fingerprint_notice = fingerprint_status,
+            .modifiers = modifier_string,
+            .password_characters = input_character_count(),
+            .password_pending = password_verifying,
+        };
         if (xr_screens > 0) {
             for (int monitor = 0; monitor < xr_screens; monitor++) {
                 Rect r = xr_resolutions[monitor];

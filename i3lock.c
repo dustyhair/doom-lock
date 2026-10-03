@@ -98,6 +98,14 @@ bool skip_repeated_empty_password = false;
 /* isutf, u8_dec © 2005 Jeff Bezanson, public domain */
 #define isutf(c) (((c) & 0xC0) != 0x80)
 
+unsigned input_character_count(void) {
+    unsigned count = 0;
+    for (int i = 0; i < input_position; i++) {
+        count += isutf(password[i]);
+    }
+    return count;
+}
+
 /*
  * Decrements i to point to the previous unicode glyph
  *

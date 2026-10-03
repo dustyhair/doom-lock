@@ -84,10 +84,15 @@ fingerprint check if one is not already running.
 The bottom panel uses Doom's original `STCFN033` through `STCFN095` bitmap font
 and `GRNROCK` stone texture. Red text, gold highlights, and a beveled border frame
 the status. Typing expands it into a password dialog with a blinking underscore
-and a fixed mask that does not expose password length. Checking status replaces
-the mask while PAM runs; fingerprint instructions remain below the field.
-The graphics load from the WAD or extracted `ui/` PNG folder. Missing glyphs use
-the system font, and missing stone uses a plain frame. No font artwork is bundled.
+and one gold demonic rune per UTF-8 character. The original pixel symbols are
+chosen independently of the password and stay stable while typing. Backspace
+removes the last rune, and Escape or Ctrl+U clears the field. Long input shows
+an ellipsis and a scrolling tail. Submission shows checking status while PAM
+runs; typing a queued retry shows its new rune mask. Fingerprint instructions
+remain below the field.
+The HUD lettering and stone load from the WAD or extracted `ui/` PNG folder.
+Missing font glyphs use the system font, and missing stone uses a plain frame.
+The decorative password runes are drawn in code. No game font artwork is bundled.
 
 Fingerprint PAM uses `/etc/pam.d/i3lock`, which includes the existing login stack.
 For password PAM, the launcher validates the current system policy and copies it

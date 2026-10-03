@@ -59,6 +59,16 @@ int main(int argc, char **argv) {
     }
     cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_RGB24, 1280, 1024);
     cairo_t *ctx = cairo_create(surface);
+    /* Exercise short, overflowing, and queued rune masks on wide/narrow views. */
+    const unsigned lengths[] = {1, 9, 32, 33, 511};
+    for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
+        doom_ui_t masked = ui;
+        masked.password_characters = lengths[i];
+        masked.password_pending = i % 2;
+        doom_draw(ctx, 0, 0, 1280, 1024, &masked);
+        doom_draw(ctx, 0, 0, 320, 240, &masked);
+        assert(cairo_status(ctx) == CAIRO_STATUS_SUCCESS);
+    }
     double traveled = 0;
     for (int i = 0; i < 10000; i++) {
         double previous_x = camera_x, previous_y = camera_y;

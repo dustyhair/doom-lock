@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 #include "assets.h"
 #include "hud.h"
 
@@ -11,6 +13,26 @@
 
 static cairo_surface_t *glyphs[3][FONT_COUNT], *stone;
 static bool bitmap_font;
+static uint32_t rune_seed;
+/* Original five-by-seven symbols, rather than extracted game artwork. */
+static const uint8_t runes[][7] = {
+    {4, 10, 17, 31, 17, 10, 4},
+    {17, 17, 31, 4, 14, 4, 4},
+    {14, 17, 14, 31, 4, 4, 14},
+    {4, 14, 21, 31, 21, 14, 4},
+    {17, 10, 4, 31, 4, 10, 17},
+    {31, 17, 10, 4, 10, 17, 31},
+    {4, 31, 4, 14, 21, 4, 4},
+    {17, 31, 17, 10, 4, 14, 4},
+    {4, 10, 31, 10, 17, 10, 4},
+    {14, 4, 31, 21, 4, 21, 14},
+    {17, 10, 31, 10, 17, 17, 10},
+    {31, 10, 17, 10, 4, 10, 17},
+    {4, 21, 31, 21, 14, 4, 14},
+    {17, 31, 4, 10, 31, 10, 4},
+    {10, 21, 31, 4, 21, 10, 17},
+    {14, 17, 31, 17, 10, 4, 14},
+};
 static const double colors[3][3] = {{1.0, 0.16, 0.10}, {0.95, 0.73, 0.40}, {0.40, 0.90, 0.30}};
 
 void hud_close(void) {
@@ -54,6 +76,8 @@ static cairo_surface_t *tinted(cairo_surface_t *source, hud_color_t color) {
 
 void hud_init(const char *folder) {
     hud_close();
+    /* Visual variation only; independent of both input and the maze's PRNG. */
+    rune_seed = (uint32_t)time(NULL) ^ (uint32_t)getpid();
     stone = assets_image(folder, "ui/stone.png");
     bitmap_font = true;
     for (int i = 0; i < FONT_COUNT; i++) {
@@ -126,6 +150,50 @@ void hud_text(cairo_t *ctx, const char *text, double center, double baseline,
         }
     }
     cairo_restore(ctx);
+}
+
+double hud_password(cairo_t *ctx, unsigned characters, double center,
+                    double baseline, double size, double max_width) {
+    if (!characters || size <= 0 || max_width <= 0) {
+        return 0;
+    }
+    unsigned visible = characters < 32 ? characters : 32;
+    double scale = fmin(size / 7, max_width / (visible * 6));
+    if (scale >= 1) {
+        scale = floor(scale);
+    }
+    double width = visible * 6 * scale;
+    cairo_save(ctx);
+    cairo_set_antialias(ctx, CAIRO_ANTIALIAS_NONE);
+    cairo_translate(ctx, round(center - width / 2), round(baseline - 7 * scale));
+    cairo_scale(ctx, scale, scale);
+    for (unsigned i = 0; i < visible; i++) {
+        uint32_t selection = rune_seed + UINT32_C(0x9e3779b9) * (characters - visible + i + 1);
+        selection ^= selection >> 16;
+        selection *= UINT32_C(0x85ebca6b);
+        selection ^= selection >> 13;
+        const uint8_t *glyph = runes[selection % (sizeof(runes) / sizeof(runes[0]))];
+        /* A scrolling tail keeps long input readable and visibly changing. */
+        const uint8_t ellipsis[7] = {0, 0, 0, 0, 0, 21, 0};
+        if (characters > visible && i == 0) {
+            glyph = ellipsis;
+        }
+        for (int shade = 0; shade < 2; shade++) {
+            for (int y = 0; y < 7; y++) {
+                double light = shade ? 1.0 - y * 0.045 : 0.28;
+                cairo_set_source_rgb(ctx, colors[HUD_GOLD][0] * light,
+                                     colors[HUD_GOLD][1] * light, colors[HUD_GOLD][2] * light);
+                for (int x = 0; x < 5; x++) {
+                    if (glyph[y] & (1 << (4 - x))) {
+                        cairo_rectangle(ctx, i * 6 + x, y + (shade ? 0 : 1), 1, 1);
+                    }
+                }
+                cairo_fill(ctx);
+            }
+        }
+    }
+    cairo_restore(ctx);
+    return width;
 }
 
 void hud_panel(cairo_t *ctx, double x, double y, double width, double height) {
