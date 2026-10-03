@@ -4,13 +4,39 @@ This local fork of i3lock 2.16 adds a moving Doom maze and 14 Doom II monster
 animations to the existing i3 lock menu. Images come from the installed DOOM2.WAD.
 Extracted game assets are ignored by Git.
 
-The camera wanders through a generated maze of corridors and rooms at roughly
-one tile every three seconds, with smooth turns. Walls use Doom's original tech,
-computer, stone, and brick textures. Green slime and lava floors animate beneath
-the monsters. A small CPU raycaster draws the scene at 416 pixels wide and scales
-it with nearest-neighbor filtering. It runs only within the lock screen and does
-not change desktop idle settings. Camera movement pauses during authentication
+The camera backs through a generated maze of corridors and rooms at roughly
+one tile every three seconds, with smooth turns. It faces opposite its direction
+of travel. The monster follows the route while the camera retreats.
+Each lock chooses one consistent style using wall, floor, ceiling, and lighting
+combinations found together in Doom II's actual sectors and sidedefs:
+
+| Map | Main wall | Floor | Ceiling | Sector light |
+| --- | --- | --- | --- | --- |
+| MAP01 | TEKGREN2 | FLOOR3_3 | GRNLITE1 | 160 |
+| MAP02 | STONE4 | FLAT5_4 | FLAT5_4 | 144 |
+| MAP05 | BIGBRIK1 | FLAT1 | FLAT10 | 144 |
+| MAP14 | BSTONE1 | FLOOR5_4 | FLAT1_2 | 144 |
+| MAP24 | SKIN2 | FLOOR7_1 | CEIL5_1 | 160 |
+
+Matching detail textures mark the middle of room walls. The original texture
+colors receive only neutral distance shading. MAP24's style includes an animated
+slime basin confined to one rock-lined room with a dry border. The maze geometry
+is generated, rather than copied from those maps.
+A small CPU raycaster draws the scene at 416 pixels wide and scales it with
+nearest-neighbor filtering. It runs only within the lock screen and does not
+change desktop idle settings. Camera movement pauses during authentication
 success and the failure screen so the BFG and screen melts keep a stable scene.
+
+Monsters use the same perspective projection as the maze. Maze cells and ceiling
+height represent 128 Doom units, floor textures repeat every 64 units, and the
+camera stands 41 units above the floor. Sprite pixels retain their original world
+size, so the Cyberdemon is naturally larger than a zombieman. Extracted patch
+origins anchor movement, pain, and death frames to the same floor position.
+The monster follows the camera's route at a distance of 2.4 tiles. Its position
+and scale change through turns, and walls hide it where the corridor bends.
+Flying monsters hover and settle to the floor during death. Before the final
+kill, a monster hidden by a corner finishes coming around that corner, and the
+view aims at it if needed. The BFG uses that projected body position as its target.
 
 One of 14 monsters is randomly selected for each lock. It walks while waiting;
 flying monsters float using their original movement sprites. Each password
@@ -111,8 +137,13 @@ and check that the colorful maze moves independently of the monster animation.
 They do not verify the physical sensor or the user's actual credentials.
 
 The maze tests compile the renderer with AddressSanitizer and
-UndefinedBehaviorSanitizer. Three seeds each run 23 simulated minutes through
-rooms, corners, dead ends, and shortcuts with changing viewport dimensions.
+UndefinedBehaviorSanitizer. All five map styles each run 23 simulated minutes
+through rooms, corners, dead ends, and shortcuts with changing viewport dimensions.
+Every step checks that the camera stays out of walls, moves at walking speed,
+and travels backward along its viewing axis. The tests also check monster path
+placement, wall clipping, and a visible target for the final kill. All 14 monsters
+and their death frames render in each style. Reference level and monster images
+are written to `build/test-results/level-*.png` and `build/test-results/monster-*.png`.
 
 If Picom is installed, run `DOOM_TEST_PICOM=1 python3 tests/test-lock.py` to repeat
 the checks with compositor shadows and fading enabled on the isolated display.

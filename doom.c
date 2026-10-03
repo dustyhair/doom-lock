@@ -16,6 +16,7 @@
 typedef struct {
     const char *id, *name;
     int count, walk_count;
+    int origin_x, origin_y;
     cairo_surface_t *idle, *pain, *walk[6], *death[MAX_FRAMES];
 } monster_t;
 
@@ -70,6 +71,13 @@ bool doom_init(void) {
         if (cairo_surface_status(bfg_projectile[i]) != CAIRO_STATUS_SUCCESS) return false;
     }
     for (int i = 0; i < monster_count; i++) {
+        snprintf(path, sizeof(path), "%s/%s/origin.txt", folder, monsters[i].id);
+        FILE *origin = fopen(path, "r");
+        if (!origin) return false;
+        int fields = fscanf(origin, "%d %d", &monsters[i].origin_x, &monsters[i].origin_y);
+        fclose(origin);
+        if (fields != 2 || monsters[i].origin_x < 0 || monsters[i].origin_x > 256 ||
+            monsters[i].origin_y < 0 || monsters[i].origin_y > 192) return false;
         snprintf(path, sizeof(path), "%s/%s/idle.png", folder, monsters[i].id);
         monsters[i].idle = cairo_image_surface_create_from_png(path);
         if (cairo_surface_status(monsters[i].idle) != CAIRO_STATUS_SUCCESS) return false;
@@ -123,6 +131,7 @@ void doom_shot(void) {
 
 void doom_authenticated(bool fingerprint) {
     melt_cancel();
+    level_actor_focus();
     if (frame >= monsters[current].count - 1) choose_monster();
     if (frame < 0) frame = 0;
     authenticated = true;
@@ -209,13 +218,15 @@ static void centered_text(cairo_t *ctx, const char *text, double center, double 
 
 void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
     monster_t *monster = &monsters[current];
-    int sprite_width = cairo_image_surface_get_width(monster->idle);
-    int sprite_height = cairo_image_surface_get_height(monster->idle);
-    double scale = height >= 1000 ? 3 : height >= 650 ? 2 : 1;
-    while (scale > 1 && (sprite_width * scale > width - 32 ||
-                        sprite_height * scale > height - 220)) scale--;
+    level_actor_t actor = level_actor_projection(width, height);
+    double scale_x = actor.scale_x, scale_y = actor.scale_y;
+    bool floating = current == 4 || current == 11 || current == 12;
+    double lift = floating ? 16 : 0;
+    if (authenticated && !(bfg_kill && bfg_tick < BFG_TRAVEL_TICKS))
+        lift *= 1 - (double)frame / (monster->count - 1);
+    double left = x + actor.x - monster->origin_x * scale_x;
+    double top = y + actor.floor_y - (monster->origin_y + lift) * scale_y;
     double center = x + width / 2.0;
-    double top = y + height * 0.76 - sprite_height * scale;
     cairo_save(ctx);
     cairo_select_font_face(ctx, "monospace", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     if (failure) {
@@ -249,23 +260,25 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
         cairo_rectangle(ctx, x, y, width, height);
         cairo_fill(ctx);
     }
-    cairo_save(ctx);
-    double bob = !authenticated && (current == 4 || current == 11 || current == 12)
-        ? sin(walk_tick * 0.4) * 5 : 0;
-    cairo_translate(ctx, center - sprite_width * scale / 2, top + bob);
-    cairo_scale(ctx, scale, scale);
+    double bob = !authenticated && floating ? sin(walk_tick * 0.4) * 2 * scale_y : 0;
     cairo_surface_t *sprite = authenticated ? monster->death[frame]
         : ev_time() < hit_until ? monster->pain
         : monster->walk[(walk_tick / 2) % monster->walk_count];
     if (bfg_kill && impact_frame < 0) sprite = bfg_target;
     else if (bfg_kill && impact_frame == 0) sprite = monster->pain;
-    cairo_set_source_surface(ctx, sprite, 0, 0);
-    cairo_pattern_set_filter(cairo_get_source(ctx), CAIRO_FILTER_NEAREST);
-    cairo_paint(ctx);
-    cairo_restore(ctx);
-    if (bfg_kill && impact_frame < 4) {
-        double target_x = center - sprite_width * scale / 2 + bfg_target_x * scale;
-        double target_y = top + bfg_target_y * scale;
+    if (actor.visible) {
+        cairo_save(ctx);
+        level_actor_clip(ctx, x, y, width, height, actor.depth);
+        cairo_translate(ctx, left, top + bob);
+        cairo_scale(ctx, scale_x, scale_y);
+        cairo_set_source_surface(ctx, sprite, 0, 0);
+        cairo_pattern_set_filter(cairo_get_source(ctx), CAIRO_FILTER_NEAREST);
+        cairo_paint(ctx);
+        cairo_restore(ctx);
+    }
+    if (bfg_kill && impact_frame < 4 && actor.visible) {
+        double target_x = left + bfg_target_x * scale_x;
+        double target_y = top + bfg_target_y * scale_y;
         cairo_surface_t *effect;
         double effect_x, effect_y;
         if (impact_frame < 0) {
@@ -284,9 +297,9 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
         int effect_width = cairo_image_surface_get_width(effect);
         int effect_height = cairo_image_surface_get_height(effect);
         cairo_save(ctx);
-        cairo_translate(ctx, effect_x - effect_width * scale / 2,
-                        effect_y - effect_height * scale / 2);
-        cairo_scale(ctx, scale, scale);
+        cairo_translate(ctx, effect_x - effect_width * scale_x / 2,
+                        effect_y - effect_height * scale_y / 2);
+        cairo_scale(ctx, scale_x, scale_y);
         cairo_set_source_surface(ctx, effect, 0, 0);
         cairo_pattern_set_filter(cairo_get_source(ctx), CAIRO_FILTER_NEAREST);
         cairo_paint(ctx);

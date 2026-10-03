@@ -30,9 +30,11 @@ WALK = {"HEAD": "A", "SKUL": "AB", "PAIN": "ABC",
 PAIN = {"POSS": "G", "SPOS": "G", "TROO": "H", "SARG": "H", "HEAD": "E",
         "BOSS": "H", "BOS2": "H", "SKEL": "L", "FATT": "J", "CPOS": "G",
         "BSPI": "I", "SKUL": "E", "PAIN": "G", "CYBR": "G"}
-WALLS = ["STARTAN3", "TEKWALL4", "COMPTALL", "COMPBLUE", "STONE3", "BRICK7", "METAL2"]
-FLATS = ["FLOOR0_1", "FLOOR4_8", "CEIL3_5", "NUKAGE1", "NUKAGE2", "NUKAGE3",
-         "LAVA1", "LAVA2", "LAVA3", "LAVA4"]
+# Matching combinations from MAP01, MAP02, MAP05, MAP14, and MAP24.
+WALLS = ["TEKGREN2", "TEKGREN5", "STONE4", "PIPEWAL1", "BIGBRIK1", "BIGBRIK2",
+         "BSTONE1", "BSTONE2", "SKIN2", "TANROCK5"]
+FLATS = ["FLOOR3_3", "GRNLITE1", "FLAT5_4", "FLAT1", "FLAT10", "FLOOR5_4",
+         "FLAT1_2", "FLOOR7_1", "CEIL5_1", "NUKAGE1", "NUKAGE2", "NUKAGE3"]
 
 
 def extract_level(lumps, palette, patch, destination):
@@ -145,13 +147,17 @@ def extract(wad_path, destination):
         for image in images + walks + [pain]:
             combined = ImageChops.lighter(combined, image.getchannel("A"))
         bounds = combined.getbbox()
+        # Doom patch origins locate the actor's center and floor independently
+        # of padding needed by its movement, pain, and death frames.
+        (folder / "origin.txt").write_text(f"{128 - bounds[0]} {170 - bounds[1]}\n")
         images[0].crop(bounds).save(folder / "idle.png")
         for index, image in enumerate(images[1:]):
             image.crop(bounds).save(folder / f"death-{index:02d}.png")
         for index, image in enumerate(walks):
             image.crop(bounds).save(folder / f"walk-{index:02d}.png")
         pain.crop(bounds).save(folder / "pain.png")
-        manifest.append({"id": slug, "name": label, "frames": len(frames), "walk_frames": len(walk)})
+        manifest.append({"id": slug, "name": label, "frames": len(frames), "walk_frames": len(walk),
+                         "origin_x": 128 - bounds[0], "origin_y": 170 - bounds[1]})
     (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Extracted {len(manifest)} monsters to {destination}")
 
