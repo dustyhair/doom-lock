@@ -57,7 +57,7 @@ try:
                                  "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
                                  str(output / "doom-lock-preview.mp4")],
                                 env=environment, stdin=subprocess.PIPE, stdout=log, stderr=log)
-    time.sleep(2.5)
+    time.sleep(12)
     key("type", "--clearmodifiers", "--delay", "260", "wrong")
     time.sleep(0.3)
     key("key", "Return")

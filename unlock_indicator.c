@@ -24,6 +24,7 @@
 #include "dpi.h"
 #include "doom.h"
 #include "melt.h"
+#include "level.h"
 
 #define BUTTON_RADIUS 90
 #define BUTTON_SPACE (BUTTON_RADIUS + 5)
@@ -389,9 +390,11 @@ void draw_image(xcb_pixmap_t bg_pixmap, uint32_t *resolution) {
         if (xr_screens > 0) {
             for (int monitor = 0; monitor < xr_screens; monitor++) {
                 Rect r = xr_resolutions[monitor];
+                level_draw(xcb_ctx, r.x, r.y, r.width, r.height);
                 doom_draw(xcb_ctx, r.x, r.y, r.width, r.height);
             }
         } else {
+            level_draw(xcb_ctx, 0, 0, resolution[0], resolution[1]);
             doom_draw(xcb_ctx, 0, 0, resolution[0], resolution[1]);
         }
     } else if (xr_screens > 0) {

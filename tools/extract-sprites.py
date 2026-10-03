@@ -30,6 +30,48 @@ WALK = {"HEAD": "A", "SKUL": "AB", "PAIN": "ABC",
 PAIN = {"POSS": "G", "SPOS": "G", "TROO": "H", "SARG": "H", "HEAD": "E",
         "BOSS": "H", "BOS2": "H", "SKEL": "L", "FATT": "J", "CPOS": "G",
         "BSPI": "I", "SKUL": "E", "PAIN": "G", "CYBR": "G"}
+WALLS = ["STARTAN3", "TEKWALL4", "COMPTALL", "COMPBLUE", "STONE3", "BRICK7", "METAL2"]
+FLATS = ["FLOOR0_1", "FLOOR4_8", "CEIL3_5", "NUKAGE1", "NUKAGE2", "NUKAGE3",
+         "LAVA1", "LAVA2", "LAVA3", "LAVA4"]
+
+
+def extract_level(lumps, palette, patch, destination):
+    """Compose wall patches from TEXTURE1/PNAMES and decode palette-indexed flats."""
+    destination.mkdir(parents=True, exist_ok=True)
+    pnames = lumps["PNAMES"]
+    count = struct.unpack_from("<I", pnames)[0]
+    names = [pnames[4 + index * 8:12 + index * 8].rstrip(b"\0").decode("ascii").upper()
+             for index in range(count)]
+    definitions = {}
+    for table_name in ["TEXTURE1", "TEXTURE2"]:
+        if table_name not in lumps:
+            continue
+        table = lumps[table_name]
+        for index in range(struct.unpack_from("<I", table)[0]):
+            offset = struct.unpack_from("<I", table, 4 + index * 4)[0]
+            name, _, width, height, _, patch_count = struct.unpack_from("<8sIHHIH", table, offset)
+            name = name.rstrip(b"\0").decode("ascii").upper()
+            if name not in WALLS:
+                continue
+            if not (0 < width <= 1024 and 0 < height <= 1024):
+                raise ValueError(f"Invalid texture dimensions: {name}")
+            image = Image.new("RGBA", (width, height), (0, 0, 0, 255))
+            for part in range(patch_count):
+                x, y, patch_index, _, _ = struct.unpack_from("<hhhhh", table, offset + 22 + part * 10)
+                if not 0 <= patch_index < len(names):
+                    raise ValueError(f"Invalid texture patch index: {name}")
+                fragment = patch(names[patch_index], False)
+                image.paste(fragment, (x, y), fragment)
+            definitions[name] = image
+    for name in WALLS:
+        definitions[name].convert("RGB").save(destination / f"{name}.png")
+    for name in FLATS:
+        if len(lumps[name]) != 4096:
+            raise ValueError(f"Invalid flat size: {name}")
+        image = Image.frombytes("P", (64, 64), lumps[name])
+        image.putpalette(palette)
+        image.convert("RGB").save(destination / f"{name}.png")
+    print(f"Extracted {len(WALLS)} walls and {len(FLATS)} floors/ceilings to {destination}")
 
 
 def extract(wad_path, destination):
@@ -42,7 +84,7 @@ def extract(wad_path, destination):
         offset, size, name = struct.unpack_from("<ii8s", data, directory + index * 16)
         if offset < 0 or size < 0 or offset + size > len(data):
             raise ValueError("Invalid lump bounds")
-        lumps[name.rstrip(b"\0").decode("ascii")] = data[offset:offset + size]
+        lumps[name.rstrip(b"\0").decode("ascii").upper()] = data[offset:offset + size]
     palette = lumps["PLAYPAL"][:768]
     aliases = {}
     for name in lumps:
@@ -75,6 +117,7 @@ def extract(wad_path, destination):
         return canvas
 
     destination.mkdir(parents=True, exist_ok=True)
+    extract_level(lumps, palette, patch, destination / "level")
     patch("STFDEAD0", False).save(destination / "player-dead.png")
     bfg = [patch("BFE2" + frame + "0") for frame in "ABCD"]
     bounds = Image.new("L", bfg[0].size)

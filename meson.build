@@ -90,6 +90,7 @@ i3lock_srcs = [
   'dpi.c',
   'doom.c',
   'melt.c',
+  'level.c',
   'i3lock.c',
   'randr.c',
   'unlock_indicator.c',

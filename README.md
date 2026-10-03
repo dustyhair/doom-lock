@@ -3,7 +3,9 @@ Doom lock screen
 
 This local fork of i3lock adds Doom II monster animations, hits while typing,
 a death screen for incorrect passwords, and a BFG kill for fingerprint unlock.
-Password and fingerprint verification run independently.
+The background slowly tours a generated maze with original Doom wall textures,
+animated slime, and lava. Successful unlock melts the scene away to reveal the
+live desktop. Password and fingerprint verification run independently.
 
 See [DOOM-LOCK.md](DOOM-LOCK.md) for the local build, installation, and restore
 instructions, including dependency setup for a fresh checkout. Meson builds this

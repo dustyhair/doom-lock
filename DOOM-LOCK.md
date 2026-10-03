@@ -1,8 +1,16 @@
 # Doom lock screen
 
-This local fork of i3lock 2.16 adds 14 Doom II monster death animations to the
-existing i3 lock menu. Sprite images come from the locally installed DOOM2.WAD.
+This local fork of i3lock 2.16 adds a moving Doom maze and 14 Doom II monster
+animations to the existing i3 lock menu. Images come from the installed DOOM2.WAD.
 Extracted game assets are ignored by Git.
+
+The camera wanders through a generated maze of corridors and rooms at roughly
+one tile every three seconds, with smooth turns. Walls use Doom's original tech,
+computer, stone, and brick textures. Green slime and lava floors animate beneath
+the monsters. A small CPU raycaster draws the scene at 416 pixels wide and scales
+it with nearest-neighbor filtering. It runs only within the lock screen and does
+not change desktop idle settings. Camera movement pauses during authentication
+success and the failure screen so the BFG and screen melts keep a stable scene.
 
 One of 14 monsters is randomly selected for each lock. It walks while waiting;
 flying monsters float using their original movement sprites. Each password
@@ -52,7 +60,7 @@ Installed files:
 
 - `~/.local/bin/lock-screen.sh`, the launcher used by the Lock menu
 - `~/.local/bin/i3lock-doom`, the custom executable
-- `~/.local/share/doom-lock/sprites`, the local sprite images
+- `~/.local/share/doom-lock/sprites`, monster sprites and level textures
 - `~/.local/share/doom-lock/pam`, the refreshed policy for password verification
 - `~/.local/share/doom-lock/prepare-pam.py`, the policy preparation helper
 - `~/.local/share/doom-lock/lock-screen.sh.before-doom-*`, the original launcher backup
@@ -66,7 +74,7 @@ system i3lock and its fingerprint startup shortcut.
 
 The local build targets Debian/Ubuntu Linux. It requires Python 3, a C compiler,
 `apt`, `dpkg-deb`, and the installed runtime libraries for PAM, Cairo, libev,
-XCB including SHAPE, and xkbcommon. Sprite extraction needs Pillow, available as
+XCB including SHAPE, and xkbcommon. Asset extraction needs Pillow, available as
 `python3-pil`.
 The tests also need `Xvfb`, `xdotool`, and ImageMagick's `import` command, available
 in the `xvfb`, `xdotool`, and `imagemagick` packages.
@@ -84,6 +92,7 @@ python3 tools/extract-sprites.py \
   "$HOME/Games/Heroic/DOOM + DOOM II/dosdoom/base/doom2/DOOM2.WAD" assets
 python3 tools/build-local.py
 python3 tests/test-pam.py
+python3 tests/test-level.py
 python3 tests/test-lock.py
 python3 tools/install-local.py
 ```
@@ -97,8 +106,13 @@ walking and hit animations, multi-message PAM conversations, repeated restarts
 after fingerprint timeouts, queued edits after the failure screen appears, and
 the daemon fork used by the installed launcher. They also inspect the lock's
 bounding shape and input grabs, change the desktop during a success melt to
-check the live reveal, and test fingerprint success during a failure transition.
+check the live reveal, test fingerprint success during a failure transition,
+and check that the colorful maze moves independently of the monster animation.
 They do not verify the physical sensor or the user's actual credentials.
+
+The maze tests compile the renderer with AddressSanitizer and
+UndefinedBehaviorSanitizer. Three seeds each run 23 simulated minutes through
+rooms, corners, dead ends, and shortcuts with changing viewport dimensions.
 
 If Picom is installed, run `DOOM_TEST_PICOM=1 python3 tests/test-lock.py` to repeat
 the checks with compositor shadows and fading enabled on the isolated display.
@@ -118,4 +132,5 @@ Upstream sources:
 - https://github.com/i3/i3lock/tree/2.16
 - https://github.com/id-Software/DOOM/blob/master/linuxdoom-1.10/info.c
 - https://github.com/id-Software/DOOM/blob/master/linuxdoom-1.10/f_wipe.c
+- https://github.com/id-Software/DOOM/blob/master/linuxdoom-1.10/r_data.c
 - https://www.x.org/releases/X11R7.7/doc/xextproto/shape.html

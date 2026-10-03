@@ -65,7 +65,8 @@ def shape_and_grabs():
 
 def screenshot(name):
     path = output / name
-    run("import", "-window", "root", str(path))
+    run("import", "-window", "root", "-define", "png:compression-level=0",
+        "-define", "png:compression-filter=0", str(path))
     return Image.open(path).convert("RGB")
 
 
@@ -87,7 +88,7 @@ try:
     assert desktop.stdout.readline().strip(), "Desktop fixture did not start"
     process = start("password")
     assert shape_and_grabs() == (1, 1280 * 1024, 1, 1), "Desktop exposed or grabs missing before authentication"
-    run("import", "-window", "root", str(output / "lock-screen.png"))
+    screenshot("lock-screen.png")
     run("xdotool", "type", "--clearmodifiers", "--delay", "35", "doom-test")
     submitted = time.monotonic()
     run("xdotool", "key", "Return")
@@ -116,18 +117,20 @@ try:
     time.sleep(0.25)
     assert process.poll() is None, "Locker exited before fingerprint authentication"
     time.sleep(0.80)
-    run("import", "-window", "root", str(output / "bfg-launch.png"))
+    screenshot("bfg-launch.png")
     launch = Image.open(output / "bfg-launch.png").convert("RGB")
-    assert launch.getpixel((10, 10)) == (8, 8, 8), "BFG flashed before hitting the monster"
     time.sleep(0.32)
-    run("import", "-window", "root", str(output / "bfg-flight.png"))
+    screenshot("bfg-flight.png")
     flight = Image.open(output / "bfg-flight.png").convert("RGB")
+    assert flight.getpixel((10, 10)) == launch.getpixel((10, 10)), "BFG flashed before hitting the monster"
     assert ImageChops.difference(launch, flight).getbbox(), "BFG projectile did not travel"
     assert process.poll() is None, "Locker exited before BFG impact"
-    time.sleep(0.50)
-    run("import", "-window", "root", str(output / "bfg.png"))
-    red, green, blue = Image.open(output / "bfg.png").getpixel((10, 10))[:3]
-    assert green > red * 2 and green > blue * 2, "Fingerprint success did not fire BFG"
+    def bfg_impact():
+        # Textured PNG captures take longer with a compositor. Observe the
+        # impact rather than assuming a fixed capture delay fits the flash.
+        red, green, blue = screenshot("bfg.png").getpixel((10, 10))
+        return green > red * 2 and green > blue * 2
+    wait_for(bfg_impact, timeout=1.2)
     wait_for(lambda: shape_and_grabs()[1] < 1280 * 1024)
     assert shape_and_grabs()[2:] == (1, 1), "Fingerprint melt released input grabs early"
     process.wait(timeout=5)
@@ -141,16 +144,16 @@ try:
     wait_for(lambda: "wrong" in trace_lines(), timeout=0.8)
     wait_for(lambda: "denied" in trace_lines())
     time.sleep(0.4)
-    run("import", "-window", "root", str(output / "denied.png"))
+    screenshot("denied.png")
     assert shape_and_grabs() == (1, 1280 * 1024, 1, 1), "Failure melt exposed the desktop or released input"
     time.sleep(0.25)
     mixed = screenshot("failure-melt.png")
     assert mixed.getpixel((10, 10))[0] > mixed.getpixel((10, 10))[1] * 4
-    assert mixed.getpixel((10, 1000)) == (8, 8, 8), "Failure skipped the falling lock-screen columns"
+    assert mixed.getpixel((10, 1000)) != mixed.getpixel((10, 10)), "Failure skipped the falling lock-screen columns"
     run("xdotool", "key", "Escape")
     time.sleep(2.2)
     assert process.poll() is None, "Failed authentication or Escape unlocked the screen"
-    run("import", "-window", "root", str(output / "death-screen.png"))
+    screenshot("death-screen.png")
     red, green, blue = Image.open(output / "death-screen.png").getpixel((10, 10))[:3]
     assert red > green * 4 and red > blue * 4, "Wrong password did not show persistent death screen"
     run("xdotool", "type", "--clearmodifiers", "--delay", "35", "doom-test")
@@ -173,20 +176,25 @@ try:
 
     process = start("animation")
     time.sleep(2.2)
-    run("import", "-window", "root", str(output / "idle.png"))
+    screenshot("idle.png")
     time.sleep(0.32)
-    run("import", "-window", "root", str(output / "walking.png"))
+    screenshot("walking.png")
     idle = Image.open(output / "idle.png").convert("RGB")
     walking = Image.open(output / "walking.png").convert("RGB")
     assert ImageChops.difference(idle, walking).getbbox(), "Idle monster did not walk or float"
+    view = (0, 0, 240, 800)
+    assert ImageChops.difference(idle.crop(view), walking.crop(view)).getbbox(), "Maze camera did not move"
+    colors = idle.crop((0, 0, 1280, 250)).resize((320, 63)).getcolors(20160)
+    assert colors and len(colors) > 80, "Level background lacks textured color"
+    assert max(sum(pixel) for count, pixel in colors) > 240, "Level background is too dark"
     run("xdotool", "type", "a")
     time.sleep(0.02)
-    run("import", "-window", "root", str(output / "hit.png"))
+    screenshot("hit.png")
     hit = Image.open(output / "hit.png").convert("RGB")
     assert ImageChops.difference(walking, hit).getbbox(), "Typing did not hit the monster"
     process.terminate()
     process.wait(timeout=3)
-    print("PASS: idle walking or floating, keystroke hit animation")
+    print("PASS: colorful textured maze moves slowly while monsters walk or float; typing hits")
 
     process = start("editing")
     run("xdotool", "type", "doom-tesx")
@@ -230,7 +238,7 @@ try:
     run("xdotool", "key", "Return")
     wait_for(lambda: "denied" in trace_lines())
     time.sleep(0.65)
-    run("import", "-window", "root", str(output / "queued-denied.png"))
+    screenshot("queued-denied.png")
     red, green, blue = Image.open(output / "queued-denied.png").getpixel((10, 10))[:3]
     assert red > green * 4 and red > blue * 4, "Queued edit must occur after the failure screen appears"
     run("xdotool", "type", "t")

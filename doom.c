@@ -8,6 +8,7 @@
 #include <ev.h>
 #include "doom.h"
 #include "melt.h"
+#include "level.h"
 #include "unlock_indicator.h"
 
 #define MAX_FRAMES 10
@@ -86,6 +87,7 @@ bool doom_init(void) {
             if (cairo_surface_status(monsters[i].death[j]) != CAIRO_STATUS_SUCCESS) return false;
         }
     }
+    if (!level_init(folder)) return false;
     current = rand() % monster_count;
     enabled = true;
     return true;
@@ -154,6 +156,7 @@ void doom_authenticated(bool fingerprint) {
 
 static void tick(EV_P_ ev_timer *watcher, int events) {
     if (failure) return;
+    if (!authenticated) level_tick(0.14);
     walk_tick++;
     if (bfg_kill) {
         bfg_tick++;
@@ -208,11 +211,11 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
     monster_t *monster = &monsters[current];
     int sprite_width = cairo_image_surface_get_width(monster->idle);
     int sprite_height = cairo_image_surface_get_height(monster->idle);
-    double scale = height >= 1000 ? 4 : height >= 650 ? 3 : 2;
+    double scale = height >= 1000 ? 3 : height >= 650 ? 2 : 1;
     while (scale > 1 && (sprite_width * scale > width - 32 ||
                         sprite_height * scale > height - 220)) scale--;
     double center = x + width / 2.0;
-    double top = y + height / 2.0 - sprite_height * scale / 2 - 25;
+    double top = y + height * 0.76 - sprite_height * scale;
     cairo_save(ctx);
     cairo_select_font_face(ctx, "monospace", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     if (failure) {
@@ -236,13 +239,13 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
         return;
     }
     if (!authenticated && ev_time() < flash_until) {
-        cairo_set_source_rgb(ctx, 0.10, 0.015, 0.01);
+        cairo_set_source_rgba(ctx, 0.9, 0.06, 0.02, 0.25);
         cairo_rectangle(ctx, x, y, width, height);
         cairo_fill(ctx);
     }
     int impact_frame = bfg_tick - BFG_TRAVEL_TICKS;
     if (bfg_kill && impact_frame >= 0 && impact_frame < 4) {
-        cairo_set_source_rgb(ctx, 0.03, impact_frame == 0 ? 0.30 : 0.10, 0.035);
+        cairo_set_source_rgba(ctx, 0.03, 0.9, 0.035, 0.78);
         cairo_rectangle(ctx, x, y, width, height);
         cairo_fill(ctx);
     }
@@ -289,7 +292,10 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
         cairo_paint(ctx);
         cairo_restore(ctx);
     }
-    centered_text(ctx, monster->name, center, top + sprite_height * scale + 32, 14, 0.45, 0.42, 0.38);
+    cairo_set_source_rgba(ctx, 0.02, 0.025, 0.03, 0.88);
+    cairo_rectangle(ctx, x, y + height - 100, width, 100);
+    cairo_fill(ctx);
+    centered_text(ctx, monster->name, center, y + height - 72, 14, 0.85, 0.65, 0.38);
     const char *status = "SCAN FINGER OR TYPE PASSWORD + ENTER";
     if (authenticated) status = bfg_kill ? "BFG 9000 / ACCESS GRANTED" : "ACCESS GRANTED";
     else if (auth_state == STATE_AUTH_VERIFY)
@@ -299,9 +305,9 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
     else if (auth_state == STATE_I3LOCK_LOCK_FAILED) status = "COULD NOT LOCK";
     if (!authenticated && !failure && input_position > 0)
         status = "PASSWORD ENTERED / PRESS ENTER";
-    centered_text(ctx, status, center, top + sprite_height * scale + 70, 15,
-                  authenticated ? 0.35 : 0.70, authenticated ? 0.75 : 0.65, 0.50);
+    centered_text(ctx, status, center, y + height - 43, 15,
+                  authenticated ? 0.35 : 0.80, authenticated ? 0.90 : 0.85, 0.70);
     if (modifier_string)
-        centered_text(ctx, modifier_string, center, top + sprite_height * scale + 98, 13, 0.8, 0.3, 0.2);
+        centered_text(ctx, modifier_string, center, y + height - 17, 13, 0.9, 0.55, 0.25);
     cairo_restore(ctx);
 }

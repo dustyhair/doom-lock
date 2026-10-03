@@ -22,7 +22,7 @@ command = ["cc", "-std=c11", "-D_GNU_SOURCE", "-O2", "-Wall", "-Wextra",
            "-Wno-unused-parameter", "-Wno-missing-field-initializers", "-pthread",
            "-I" + str(build), "-I" + str(root / "include"), "-I" + str(headers),
            "-I" + str(headers / "cairo"), "-I/usr/include/cairo",
-           *[str(root / name) for name in ["dpi.c", "i3lock.c", "randr.c", "unlock_indicator.c", "xcb.c", "doom.c", "melt.c"]],
+           *[str(root / name) for name in ["dpi.c", "i3lock.c", "randr.c", "unlock_indicator.c", "xcb.c", "doom.c", "melt.c", "level.c"]],
            "-o", str(build / "i3lock-doom"), "-lm", "-lrt",
            *["-l:lib" + library for library in libraries]]
 subprocess.run(command, check=True)
