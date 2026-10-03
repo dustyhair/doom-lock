@@ -13,6 +13,8 @@
 
 #define MAX_FRAMES 10
 #define BFG_TRAVEL_TICKS 6
+#define BFG_BLAST_TICKS 4
+#define BFG_SETTLE_TICKS 2
 typedef struct {
     const char *id, *name;
     int count, walk_count;
@@ -176,7 +178,10 @@ static void tick(EV_P_ ev_timer *watcher, int events) {
             frame += 2;
             if (frame >= monsters[current].count - 1) {
                 frame = monsters[current].count - 1;
-                if (++corpse_ticks >= 3) {
+                /* Render the clear scene before the melt captures it, even
+                 * when a monster has a short death animation. */
+                if (++corpse_ticks >= 3 &&
+                    bfg_tick >= BFG_TRAVEL_TICKS + BFG_BLAST_TICKS + BFG_SETTLE_TICKS) {
                     if (melt_begin(true)) ev_timer_stop(loop, watcher);
                     else ev_break(loop, EVBREAK_ALL);
                     return;
@@ -258,8 +263,9 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
         cairo_fill(ctx);
     }
     int impact_frame = bfg_tick - BFG_TRAVEL_TICKS;
-    if (bfg_kill && impact_frame >= 0 && impact_frame < 4) {
-        cairo_set_source_rgba(ctx, 0.03, 0.9, 0.035, 0.78);
+    if (bfg_kill && impact_frame >= 0 && impact_frame < BFG_BLAST_TICKS) {
+        double opacity = 0.78 * (1 - (double)impact_frame / BFG_BLAST_TICKS);
+        cairo_set_source_rgba(ctx, 0.03, 0.9, 0.035, opacity);
         cairo_rectangle(ctx, x, y, width, height);
         cairo_fill(ctx);
     }
@@ -279,7 +285,7 @@ void doom_draw(cairo_t *ctx, int x, int y, int width, int height) {
         cairo_paint(ctx);
         cairo_restore(ctx);
     }
-    if (bfg_kill && impact_frame < 4 && actor.visible) {
+    if (bfg_kill && impact_frame < BFG_BLAST_TICKS && actor.visible) {
         double target_x = left + bfg_target_x * scale_x;
         double target_y = top + bfg_target_y * scale_y;
         cairo_surface_t *effect;

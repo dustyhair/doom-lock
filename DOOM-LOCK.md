@@ -42,8 +42,9 @@ One of 14 monsters is randomly selected for each lock. It walks while waiting;
 flying monsters float using their original movement sprites. Each password
 character triggers the monster's original pain frame and a brief hit flash.
 Password success plays its death animation. Fingerprint success fires an original
-BFG projectile that flies into the living monster's body, explodes with a green
-flash, and sends it through a fast death animation. The screen stays
+BFG projectile that flies into the living monster's body, explodes with a fading
+green flash, and sends it through a fast death animation. The flash and blast
+clear before a brief pause and the screen melt. The screen stays
 locked until authentication succeeds and the final animation finishes.
 After the monster dies, a Doom-style column melt uncovers the live desktop
 behind the lock window. The strips start at staggered times, accelerate, and
