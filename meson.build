@@ -4,7 +4,7 @@
 # the meson book: https://meson-manual.com/
 
 project(
-  'i3lock',
+  'doom-lock',
   'c',
   version: '2.16',
   default_options: [
@@ -65,7 +65,7 @@ config_h = declare_dependency(
 # manpages
 ################################################################################
 
-install_man('i3lock.1')
+# Keep the upstream manual as a reference; do not replace system i3lock files.
 
 # Required for e.g. struct ucred to be defined as per unix(7).
 add_project_arguments('-D_GNU_SOURCE', language: 'c')
@@ -125,15 +125,12 @@ endif
 inc = include_directories('include')
 
 executable(
-  'i3lock',
+  'i3lock-doom',
   i3lock_srcs,
   install: true,
   include_directories: inc,
   dependencies: i3lock_deps,
 )
 
-install_subdir(
-  'pam',
-  strip_directory: true,
-  install_dir: join_paths(get_option('sysconfdir'), 'pam.d'),
-)
+# System i3lock supplies the fingerprint PAM service. The launcher prepares the
+# separate password policy locally; this fork never installs a system policy.

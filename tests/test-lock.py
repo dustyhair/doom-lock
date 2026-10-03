@@ -9,7 +9,8 @@ from PIL import Image, ImageChops
 root = Path(__file__).resolve().parents[1]
 output = root / "build/test-results"
 output.mkdir(parents=True, exist_ok=True)
-subprocess.run(["python3", str(root / "tools/prepare-pam.py"), str(output / "pam")], check=True)
+# The stub supplies both PAM services. Host policy validation has its own tests.
+(output / "pam").mkdir(exist_ok=True)
 subprocess.run(["cc", "-D_GNU_SOURCE", "-shared", "-fPIC", "-I" + str(root / ".build-deps/root/usr/include"),
                 str(root / "tests/pam-stub.c"), "-o", str(output / "pam-stub.so")], check=True)
 read_fd, write_fd = os.pipe()
@@ -49,7 +50,7 @@ def start(mode):
     environment.update(DOOM_TEST_MODE=mode, DOOM_TEST_TRACE=str(trace))
     process = subprocess.Popen([str(root / "build/i3lock-doom"), "-n", "-c", "080808"],
                                env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    wait_for(lambda: trace_lines() == ["empty"])
+    wait_for(lambda: trace_lines()[:1] == ["empty"])
     assert process.poll() is None
     return process
 
@@ -159,6 +160,38 @@ try:
     process.wait(timeout=5)
     assert process.returncode == 0
     print("PASS: editing a queued retry after Enter preserves the password")
+
+    process = start("queued-after-failure")
+    run("xdotool", "type", "wrong")
+    run("xdotool", "key", "Return")
+    wait_for(lambda: "wrong" in trace_lines(), timeout=0.8)
+    run("xdotool", "type", "--delay", "5", "doom-tes")
+    run("xdotool", "key", "Return")
+    wait_for(lambda: "denied" in trace_lines())
+    time.sleep(0.15)
+    run("import", "-window", "root", str(output / "queued-denied.png"))
+    red, green, blue = Image.open(output / "queued-denied.png").getpixel((10, 10))[:3]
+    assert red > green * 4 and red > blue * 4, "Queued edit must occur after the failure screen appears"
+    run("xdotool", "type", "t")
+    wait_for(lambda: "match" in trace_lines())
+    process.wait(timeout=5)
+    assert process.returncode == 0
+    print("PASS: typing on the failure screen preserves the queued retry without another Enter")
+
+    process = start("fingerprint-restart")
+    for completed_scans in range(1, 4):
+        wait_for(lambda: trace_lines().count("scan-timeout") == completed_scans)
+        assert trace_lines().count("empty") == completed_scans
+        assert process.poll() is None, "Fingerprint timeout unlocked the screen"
+        time.sleep(0.1)
+        if completed_scans < 3:
+            run("xdotool", "key", "Return")
+            wait_for(lambda: trace_lines().count("empty") == completed_scans + 1)
+            run("xdotool", "key", "Return")
+            assert trace_lines().count("empty") == completed_scans + 1, "Enter started overlapping scans"
+    process.terminate()
+    process.wait(timeout=3)
+    print("PASS: consecutive empty Enter presses restart timed-out scans without overlapping workers")
 
     trace = output / "daemon.trace"
     trace.unlink(missing_ok=True)

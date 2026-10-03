@@ -12,6 +12,8 @@ build.mkdir(exist_ok=True)
 #define HAVE_EXPLICIT_BZERO 1
 ''')
 headers = root / ".build-deps/root/usr/include"
+if not (headers / "ev.h").is_file() or not (headers / "security/pam_appl.h").is_file():
+    raise SystemExit("Missing local headers. Run: python3 tools/bootstrap-deps.py")
 libraries = ["ev.so.4", "pam.so.0", "cairo.so.2", "xcb.so.1", "xcb-xkb.so.1",
              "xcb-xinerama.so.0", "xcb-randr.so.0", "xcb-image.so.0",
              "xcb-util.so.1", "xcb-xrm.so.0", "xkbcommon.so.0", "xkbcommon-x11.so.0"]

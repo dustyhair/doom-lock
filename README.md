@@ -6,7 +6,11 @@ a death screen for incorrect passwords, and a BFG kill for fingerprint unlock.
 Password and fingerprint verification run independently.
 
 See [DOOM-LOCK.md](DOOM-LOCK.md) for the local build, installation, and restore
-instructions. The original i3lock documentation follows.
+instructions, including dependency setup for a fresh checkout. Meson builds this
+fork as `i3lock-doom` and never installs system i3lock PAM files.
+
+The original i3lock documentation follows as an upstream reference. Use
+DOOM-LOCK.md to build and run this fork.
 
 i3lock - improved screen locker
 ===============================

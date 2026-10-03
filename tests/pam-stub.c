@@ -38,6 +38,11 @@ int pam_authenticate(pam_handle_t *handle, int flags) {
     struct pam_response *responses = NULL;
     if (!test->password_only) {
         trace_event("empty"); /* Fingerprint worker started. */
+        if (strcmp(getenv("DOOM_TEST_MODE"), "fingerprint-restart") == 0) {
+            usleep(250000);
+            trace_event("scan-timeout");
+            return PAM_AUTH_ERR;
+        }
         usleep(strcmp(getenv("DOOM_TEST_MODE"), "fingerprint") == 0 ? 1000000 : 10000000);
         if (strcmp(getenv("DOOM_TEST_MODE"), "fingerprint") != 0) return PAM_AUTH_ERR;
         if (conversation.conv(1, messages, &responses, conversation.appdata_ptr) != PAM_SUCCESS)
@@ -54,6 +59,10 @@ int pam_authenticate(pam_handle_t *handle, int flags) {
     free(password);
     free(responses);
     trace_event(empty ? "empty-password" : matches ? "match" : "wrong");
-    usleep(strcmp(getenv("DOOM_TEST_MODE"), "queued-edit") == 0 ? 1000000 : 250000);
+    int queued = strcmp(getenv("DOOM_TEST_MODE"), "queued-edit") == 0 ||
+                 strcmp(getenv("DOOM_TEST_MODE"), "queued-after-failure") == 0;
+    usleep(queued ? 1000000 : 250000);
+    if (!matches && strcmp(getenv("DOOM_TEST_MODE"), "queued-after-failure") == 0)
+        trace_event("denied");
     return matches ? PAM_SUCCESS : PAM_AUTH_ERR;
 }

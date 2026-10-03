@@ -439,6 +439,12 @@ static void handle_key_press(xcb_key_press_event_t *event) {
                 break;
             }
 
+            /* Empty Enter requests a scan, not an empty password attempt. */
+            if (input_position == 0 && doom_enabled()) {
+                if (!fingerprint_auth.pending) input_done();
+                return;
+            }
+
             if (auth_state == STATE_AUTH_WRONG) {
                 retry_verification = true;
                 return;
@@ -529,7 +535,9 @@ static void handle_key_press(xcb_key_press_event_t *event) {
     memcpy(password + input_position, buffer, n - 1);
     input_position += n - 1;
     if (doom_failure_visible()) {
-        STOP_TIMER(clear_auth_wrong_timeout);
+        /* This timer also submits an already queued retry. Keep that promise
+         * while allowing edits to the queued password after the failure. */
+        if (!retry_verification) STOP_TIMER(clear_auth_wrong_timeout);
         auth_state = STATE_AUTH_IDLE;
     }
     doom_shot();

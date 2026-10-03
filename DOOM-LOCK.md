@@ -19,12 +19,17 @@ immediately, while the fingerprint scan continues independently. Enter with no
 password starts a fingerprint check if one is not already running.
 
 Fingerprint PAM uses `/etc/pam.d/i3lock`, which includes the existing login stack.
-For password PAM, the launcher copies the current system policy into
-`~/.local/share/doom-lock/pam` on every lock. It removes the first fingerprint
-rule from `common-auth` while preserving the subsequent password rules and their
-jump destinations. This copy retains the system's password failure delay, which
-is three seconds on this machine. Unsupported policy layouts fall back to the
-original locker. No system PAM file is edited.
+For password PAM, the launcher validates the current system policy and copies it
+into `~/.local/share/doom-lock/pam` on every lock. It accepts the `pam-auth-update`
+alternative block with an initial fingerprint rule, Unix or SSS password rules,
+the deny/permit fallback, and optional capability rules. Each provider must use
+`[success=N default=ignore]` with its success jump targeting the permit rule.
+It removes only that optional fingerprint alternative. Required fingerprint
+rules, other authentication layouts, and additional factors cause the launcher
+to fall back to the original locker. Validation finishes before the existing
+local policy copy changes. The copy preserves password rules, relative jump
+destinations, and the system's failure delay, which is three seconds here.
+No system PAM file is edited.
 
 The workers have separate PAM handles and memory-locked password snapshots.
 The X11 thread renders and accepts input while verification runs. Each snapshot
@@ -50,27 +55,45 @@ system i3lock and its fingerprint startup shortcut.
 
 ## Rebuild and install
 
-Development headers were downloaded with `apt download` and extracted with
-`dpkg-deb -x` into `.build-deps/root`, without installing system packages.
-The local build script uses these headers and the system runtime libraries.
-The package archives are kept in `.build-deps/packages`.
+The local build targets Debian/Ubuntu Linux. It requires Python 3, a C compiler,
+`apt`, `dpkg-deb`, and the installed runtime libraries for PAM, Cairo, libev,
+XCB, and xkbcommon. Sprite extraction needs Pillow, available as `python3-pil`.
+The tests also need `Xvfb`, `xdotool`, and ImageMagick's `import` command, available
+in the `xvfb`, `xdotool`, and `imagemagick` packages.
+
+Run the dependency bootstrap in a fresh checkout. It downloads development
+packages with `apt download` and extracts them into `.build-deps/root`. It uses
+your configured package indexes and requires network access. It does not install
+system packages or require root. Archives remain in `.build-deps/packages`.
+The local build uses these headers and the installed runtime libraries.
 
 ```sh
 cd ~/Development/side_projects/doom-lock
+python3 tools/bootstrap-deps.py
 python3 tools/extract-sprites.py \
   "$HOME/Games/Heroic/DOOM + DOOM II/dosdoom/base/doom2/DOOM2.WAD" assets
 python3 tools/build-local.py
+python3 tests/test-pam.py
 python3 tests/test-lock.py
 python3 tools/install-local.py
 ```
 
-The tests use their own Xvfb display and a test-only PAM stub. They cover immediate
-password verification during a ten-second scan, Backspace, Ctrl+U, queued input,
-incorrect passwords, fingerprint
-success and timeout, BFG flash, death screen and retry, Escape, walking and hit
-animations, multi-message PAM conversations,
-and the daemon fork used by the installed launcher. They do not verify the
-physical sensor or the user's actual credentials.
+The PAM policy tests check supported alternatives and reject unsafe layouts
+before destination files change. The animation and input tests use their own
+Xvfb display and a test-only PAM stub. They cover immediate password verification
+during a ten-second scan, Backspace, Ctrl+U, queued input, incorrect passwords,
+fingerprint success and timeout, BFG flash, death screen and retry, Escape,
+walking and hit animations, multi-message PAM conversations, repeated restarts
+after fingerprint timeouts, queued edits after the failure screen appears, and
+the daemon fork used by the installed launcher. They do not verify the physical
+sensor or the user's actual credentials.
+
+Meson is also supported when development libraries are installed through your
+distribution. `meson setup build/meson` and `meson compile -C build/meson` produce
+`build/meson/i3lock-doom`. To use that binary with the local installer, copy it to
+`build/i3lock-doom` first. `meson install` installs only `i3lock-doom`; it does not
+install an `i3lock` binary, system PAM policy, or the upstream manual. The launcher,
+sprites, and password policy still require the local installation above.
 
 To use the original locker again, copy the saved original launcher over
 `~/.local/bin/lock-screen.sh`. The installed Doom binary and sprites can stay.
