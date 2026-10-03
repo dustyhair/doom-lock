@@ -98,6 +98,10 @@ def password_runes(name, expected):
             spans.append([offset + 480, offset + 481])
         elif present:
             spans[-1][1] = offset + 481
+    # The generated font has a full-height block as its cursor. Only rune
+    # components reach the mask's top row; the separately scaled cursor does not.
+    spans = [(left, right) for left, right in spans
+             if any(gold(image.getpixel((x, 906))) for x in range(left, right))]
     assert len(spans) == expected, f"Expected {expected} password runes, saw {len(spans)}"
     symbols = []
     for left, right in spans:
