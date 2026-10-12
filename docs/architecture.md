@@ -24,6 +24,9 @@ plugin system or separate graphics engine.
 
 The event-loop thread owns input and UI state. Only `auth.c` calls PAM.
 Password and fingerprint channels have separate handles and one worker each.
+Each attempt ends its PAM transaction with `pam_end`, and the next attempt
+starts a fresh transaction. This releases module resources between scans so
+continuous fingerprint retries do not exhaust the process's file descriptors.
 `auth_submit` copies a password into the worker's snapshot before creating its
 thread. The worker erases that snapshot before reporting completion through
 `ev_async`. The completion callback joins the worker before reading its result.

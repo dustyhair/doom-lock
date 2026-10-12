@@ -17,7 +17,8 @@ typedef void (*auth_notice_fn)(const char *message);
 /* Linux PAM backend. Call init before grabs, watch before submitting workers.
  * Re-lock snapshots in the daemon child before submitting its first worker.
  * Submit/pending and both callbacks run on the event-loop thread. Workers own
- * separate PAM handles and locked snapshots; they never touch X11 or UI state. */
+ * separate PAM transactions and locked snapshots; each worker ends its
+ * transaction before reporting completion. They never touch X11 or UI state. */
 bool auth_init(const char *username, const char *confdir, const char *display);
 bool auth_lock_memory(void);
 void auth_watch(struct ev_loop *loop, auth_result_fn result, auth_notice_fn notice);

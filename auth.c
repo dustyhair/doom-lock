@@ -23,6 +23,30 @@ static auth_notice_fn notice_callback;
 static pthread_mutex_t notice_mutex = PTHREAD_MUTEX_INITIALIZER;
 static char latest_notice[AUTH_NOTICE_SIZE];
 static ev_async notice_updates;
+static char *auth_username, *auth_confdir, *auth_display;
+static int conversation(int count, const struct pam_message **messages,
+                        struct pam_response **output, void *context);
+
+static bool start_transaction(auth_attempt_t *attempt) {
+    struct pam_conv conv = {conversation, attempt};
+    int result = attempt == &attempts[AUTH_FINGERPRINT]
+                     ? pam_start("i3lock", auth_username, &conv, &attempt->handle)
+                     : pam_start_confdir("i3lock-password", auth_username, &conv,
+                                         auth_confdir, &attempt->handle);
+    if (result == PAM_SUCCESS) {
+        result = pam_set_item(attempt->handle, PAM_TTY, auth_display);
+    }
+    attempt->result = result;
+    if (result == PAM_SUCCESS) {
+        return true;
+    }
+    fprintf(stderr, "PAM initialization failed: %s\n", pam_strerror(attempt->handle, result));
+    if (attempt->handle) {
+        pam_end(attempt->handle, result);
+        attempt->handle = NULL;
+    }
+    return false;
+}
 
 static void erase(void *memory, size_t size) {
 #ifdef HAVE_EXPLICIT_BZERO
@@ -116,6 +140,10 @@ static void *authenticate_worker(void *context) {
     if (attempt->result == PAM_SUCCESS) {
         pam_setcred(attempt->handle, PAM_REFRESH_CRED);
     }
+    /* Modules keep resources in transaction data until pam_end. Reusing a
+     * handle across scans can leak those resources on every retry. */
+    pam_end(attempt->handle, attempt->result);
+    attempt->handle = NULL;
     erase(attempt->password, sizeof(attempt->password));
     ev_async_send(event_loop, &attempt->completed);
     return NULL;
@@ -158,18 +186,16 @@ bool auth_init(const char *username, const char *confdir, const char *display) {
         auth_close();
         return false;
     }
+    auth_username = strdup(username);
+    auth_confdir = strdup(confdir);
+    auth_display = display ? strdup(display) : NULL;
+    if (!auth_username || !auth_confdir || (display && !auth_display)) {
+        auth_close();
+        return false;
+    }
     for (int i = 0; i < AUTH_CHANNEL_COUNT; i++) {
         auth_attempt_t *attempt = &attempts[i];
-        struct pam_conv conv = {conversation, attempt};
-        int result = i == AUTH_FINGERPRINT
-                         ? pam_start("i3lock", username, &conv, &attempt->handle)
-                         : pam_start_confdir("i3lock-password", username, &conv, confdir, &attempt->handle);
-        if (result == PAM_SUCCESS) {
-            result = pam_set_item(attempt->handle, PAM_TTY, display);
-        }
-        attempt->result = result;
-        if (result != PAM_SUCCESS) {
-            fprintf(stderr, "PAM initialization failed: %s\n", pam_strerror(attempt->handle, result));
+        if (!start_transaction(attempt)) {
             auth_close();
             return false;
         }
@@ -203,6 +229,9 @@ bool auth_submit(auth_channel_t channel, const char *password) {
     if (length >= sizeof(attempt->password)) {
         return false;
     }
+    if (!attempt->handle && !start_transaction(attempt)) {
+        return false;
+    }
     erase(attempt->password, sizeof(attempt->password));
     if (length) {
         memcpy(attempt->password, password, length);
@@ -212,6 +241,8 @@ bool auth_submit(auth_channel_t channel, const char *password) {
         return true;
     }
     attempt->pending = false;
+    pam_end(attempt->handle, PAM_SYSTEM_ERR);
+    attempt->handle = NULL;
     erase(attempt->password, sizeof(attempt->password));
     return false;
 }
@@ -232,4 +263,8 @@ void auth_close(void) {
         erase(attempt->password, sizeof(attempt->password));
         munlock(attempt->password, sizeof(attempt->password));
     }
+    free(auth_username);
+    free(auth_confdir);
+    free(auth_display);
+    auth_username = auth_confdir = auth_display = NULL;
 }
