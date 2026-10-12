@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -37,7 +38,9 @@ def install(args, assets):
     bin_dir = Path.home() / ".local/bin"
     share = Path.home() / ".local/share/doom-lock"
     # Policy preparation validates before changing an existing installation.
-    subprocess.run([sys.executable, str(ROOT / "tools/prepare-pam.py"), str(share / "pam")], check=True)
+    with tempfile.TemporaryDirectory(prefix="doom-lock-pam-check-") as temporary:
+        subprocess.run([sys.executable, str(ROOT / "tools/prepare-pam.py"),
+                        str(Path(temporary) / "policy")], check=True)
     bin_dir.mkdir(parents=True, exist_ok=True)
     share.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT / "tools/prepare-pam.py", share / "prepare-pam.py")

@@ -1,12 +1,16 @@
 /* Reproduce retry resource exhaustion without host PAM or a fingerprint reader. */
 #include <assert.h>
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <security/pam_appl.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
+#include <sys/signalfd.h>
+#include <sys/socket.h>
+#include <signal.h>
 #include <unistd.h>
 
 typedef struct {
@@ -70,6 +74,28 @@ int pam_authenticate(pam_handle_t *handle, int flags) {
     fake->descriptor = open("/dev/null", O_RDONLY);
     assert(fake->descriptor >= 0);
     if (!fake->password) {
+        const char *parent_fd = getenv("AUTH_TEST_PARENT_FD");
+        assert(parent_fd && fcntl(atoi(parent_fd), F_GETFD) == -1 && errno == EBADF);
+        assert(fcntl(3, F_GETFD) & FD_CLOEXEC);
+        /* Match pam_fprintd's actual bug: no pam_end cleanup for signalfd. */
+        sigset_t mask;
+        sigemptyset(&mask);
+        sigaddset(&mask, SIGUSR1);
+        assert(signalfd(-1, &mask, SFD_CLOEXEC) >= 0);
+        const char *mode = getenv("AUTH_TEST_FINGERPRINT_MODE");
+        if (mode && strcmp(mode, "crash") == 0) {
+            _exit(0); /* Even exit zero without a PAM result must fail closed. */
+        }
+        if (mode && strcmp(mode, "hang") == 0) {
+            for (;;) pause();
+        }
+        if (mode && strcmp(mode, "malformed") == 0) {
+            assert(send(3, "x", 1, MSG_NOSIGNAL) == 1);
+            return PAM_SUCCESS;
+        }
+        if (mode && strcmp(mode, "success") == 0) {
+            return PAM_SUCCESS;
+        }
         return PAM_AUTH_ERR;
     }
     const struct pam_message prompt = {PAM_PROMPT_ECHO_OFF, "Password"};
@@ -107,13 +133,21 @@ static void result(auth_channel_t channel, bool success) {
 }
 static void notice(const char *message) {}
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc == 5 && strcmp(argv[1], "--fingerprint-worker") == 0) {
+        _exit(auth_fingerprint_worker(argv[2], argv[3], argv[4]));
+    }
     struct rlimit limit;
     assert(getrlimit(RLIMIT_NOFILE, &limit) == 0);
     limit.rlim_cur = 64;
     assert(setrlimit(RLIMIT_NOFILE, &limit) == 0);
     assert(auth_init("test-user", "/test/pam", ":test"));
     auth_watch(EV_DEFAULT, result, notice);
+    /* A deliberately inheritable descriptor must not reach exec helpers. */
+    int inherited = open("/dev/null", O_RDONLY);
+    assert(inherited >= 0 && dup2(inherited, 63) == 63);
+    close(inherited);
+    setenv("AUTH_TEST_PARENT_FD", "63", 1);
     unsigned baseline = descriptor_count();
     for (unsigned i = 0; i < 2048; i++) {
         expected_success = i % 3 == 2;
@@ -139,9 +173,33 @@ int main(void) {
     while (auth_pending(AUTH_PASSWORD)) {
         ev_run(EV_DEFAULT, EVRUN_ONCE);
     }
+    const char *modes[] = {"crash", "hang", "malformed", "success"};
+    for (unsigned i = 0; i < 4; i++) {
+        setenv("AUTH_TEST_FINGERPRINT_MODE", modes[i], 1);
+        expected_success = i == 3;
+        assert(auth_submit(AUTH_FINGERPRINT, ""));
+        while (auth_pending(AUTH_FINGERPRINT)) {
+            ev_run(EV_DEFAULT, EVRUN_ONCE);
+        }
+        assert(descriptor_count() == baseline);
+        int status;
+        assert(waitpid(-1, &status, WNOHANG) == -1 && errno == ECHILD);
+    }
+    setenv("AUTH_TEST_FINGERPRINT_MODE", "hang", 1);
+    assert(auth_submit(AUTH_FINGERPRINT, ""));
+    expected_success = true;
+    assert(auth_submit(AUTH_PASSWORD, "correct"));
+    while (auth_pending(AUTH_PASSWORD)) {
+        ev_run(EV_DEFAULT, EVRUN_ONCE);
+    }
+    assert(auth_pending(AUTH_FINGERPRINT));
     auth_close();
+    int status;
+    assert(waitpid(-1, &status, WNOHANG) == -1 && errno == ECHILD);
     assert(starts == ends && descriptor_count() == baseline);
+    close(63);
     ev_loop_destroy(EV_DEFAULT);
     puts("PASS: 2048 retries under a 64-descriptor limit; password succeeds after failures");
+    puts("PASS: leaked signalfds contained; crashed/hung helpers fail closed, are reaped, and do not block password unlock");
     return 0;
 }

@@ -80,6 +80,71 @@ class LauncherTests(unittest.TestCase):
     def test_unconfigured_install_falls_back(self):
         self.assertEqual(self.run_launcher(), ["fallback:-c 000000", "input:key Return"])
 
+    def test_waiting_launcher_releases_its_suspend_inhibitor_copy(self):
+        import select
+        self.select_wad()
+        locker = self.destination / ".local/bin/i3lock-doom"
+        locker.write_text('#!/bin/sh\n'
+                          'eval "exec ${XSS_SLEEP_LOCK_FD}>&-"\n'
+                          'while [ ! -e "$doom_test_release" ]; do sleep 0.02; done\n')
+        release = self.destination / "inhibitor-release"
+        read_fd, write_fd = os.pipe()
+        process = subprocess.Popen(["sh", str(self.launcher)], pass_fds=[write_fd], env=dict(
+            self.environment, XSS_SLEEP_LOCK_FD=str(write_fd), doom_test_release=str(release)))
+        os.close(write_fd)
+        try:
+            ready, _, _ = select.select([read_fd], [], [], 5)
+            self.assertTrue(ready, "Launcher retained the inhibitor after the locker released it")
+            self.assertEqual(os.read(read_fd, 1), b"")
+            self.assertIsNone(process.poll(), "Locker should still be running")
+            release.touch()
+            self.assertEqual(process.wait(timeout=5), 0)
+        finally:
+            release.touch()
+            process.wait(timeout=5)
+            os.close(read_fd)
+
+    def test_overlapping_sessions_have_private_policies_until_unlock(self):
+        import time
+        self.select_wad()
+        share = self.destination / ".local/share/doom-lock"
+        (share / "prepare-pam.py").write_text(
+            'import pathlib,sys\np=pathlib.Path(sys.argv[1])\np.mkdir()\n'
+            '(p/"common-auth").write_text("password-only policy")\n')
+        locker = self.destination / ".local/bin/i3lock-doom"
+        locker.write_text('#!/bin/sh\n'
+                          'test "$1" = -n || exit 1\n'
+                          'printf "%s\\n" "$DOOM_LOCK_PAM_DIR" > "$doom_test_ready"\n'
+                          'while [ ! -e "$doom_test_release" ]; do sleep 0.02; done\n'
+                          'test -f "$DOOM_LOCK_PAM_DIR/common-auth"\n')
+        processes, policies = [], []
+        try:
+            for index in range(2):
+                ready = self.destination / f"ready-{index}"
+                release = self.destination / f"release-{index}"
+                process = subprocess.Popen(["sh", str(self.launcher)], env=dict(
+                    self.environment, doom_test_ready=str(ready), doom_test_release=str(release)))
+                processes.append(process)
+                deadline = time.monotonic() + 5
+                while not ready.exists():
+                    self.assertIsNone(process.poll())
+                    self.assertLess(time.monotonic(), deadline)
+                    time.sleep(0.02)
+                policies.append(Path(ready.read_text().strip()))
+            self.assertNotEqual(policies[0], policies[1])
+            self.assertTrue(all((policy / "common-auth").is_file() for policy in policies))
+            (self.destination / "release-0").touch()
+            self.assertEqual(processes[0].wait(timeout=5), 0)
+            self.assertFalse(policies[0].parent.exists())
+            self.assertTrue((policies[1] / "common-auth").is_file())
+            (self.destination / "release-1").touch()
+            self.assertEqual(processes[1].wait(timeout=5), 0)
+            self.assertFalse(policies[1].parent.exists())
+        finally:
+            for index, process in enumerate(processes):
+                (self.destination / f"release-{index}").touch()
+                process.wait(timeout=5)
+
 
 if __name__ == "__main__":
     unittest.main()

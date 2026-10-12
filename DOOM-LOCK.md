@@ -71,8 +71,8 @@ A wrong password melts the current scene into a persistent red YOU DIED screen
 with Doom's dead player face. The window stays fully opaque during this failure
 transition. Typing cancels the failure melt and starts another attempt with a
 new monster. Successful fingerprint verification can interrupt a failure melt.
-Fingerprint verification starts immediately once the window is mapped and the
-daemon has forked, even if typing has already started. Reader instructions and
+Fingerprint verification starts immediately once the window is mapped and any
+requested daemon fork has completed, even if typing has already started. Reader instructions and
 scan errors appear below the password status, including which enrolled finger
 to use. A failed scan automatically starts another attempt one second after PAM
 returns, while preserving typed passwords and the death screen. Only one scan
@@ -96,22 +96,31 @@ The decorative password runes are drawn in code. No game font artwork is bundled
 
 Fingerprint PAM uses `/etc/pam.d/i3lock`, which includes the existing login stack.
 For password PAM, the launcher validates the current system policy and copies it
-into `~/.local/share/doom-lock/pam` on every lock. The installer currently requires fingerprint support. It accepts the `pam-auth-update`
+into a new private `~/.local/share/doom-lock/pam-session.*/policy` directory for
+each lock. The launcher runs the locker in the foreground and removes that
+directory after unlocking. Preparation refuses to overwrite existing policies,
+so overlapping launches cannot change a running session's password policy and
+deleted service files cannot survive into the next session.
+The installer currently requires fingerprint support. It accepts the `pam-auth-update`
 alternative block with an initial fingerprint rule, Unix or SSS password rules,
 the deny/permit fallback, and optional capability rules. Each provider must use
 `[success=N default=ignore]` with its success jump targeting the permit rule.
 It removes only that optional fingerprint alternative. Required fingerprint
 rules and additional factors inside common-auth cause the launcher
-to fall back to the original locker. Validation finishes before the existing
-local policy copy changes. The copy preserves password rules, relative jump
+to fall back to the original locker. Validation finishes before the new
+local policy copy is written. The copy preserves password rules, relative jump
 destinations, and the system's failure delay.
 No system PAM file is edited. A background fingerprint worker refuses hidden
 password prompts from the system stack. It cannot fall back to blank Unix/SSS
 password attempts or use the password being typed for the separate worker.
 
-The workers have separate PAM handles and memory-locked password snapshots.
-The X11 thread renders and accepts input while verification runs. Each snapshot
-is erased when its check finishes. Either successful PAM check allows an exit;
+The password worker uses a memory-locked snapshot, erased when its check finishes.
+Each fingerprint scan execs a fresh helper process with its own PAM transaction
+and a private result socket. Exiting the helper reclaims even resources that a
+PAM module fails to close. A crashed helper or missing result cannot authenticate;
+a hung helper is killed after 120 seconds. The parent reaps helpers on completion
+and shutdown, and active helpers die if their parent dies.
+The X11 thread renders and accepts input while verification runs. Either successful PAM check allows an exit;
 failed fingerprint scans cannot override a password result or clear typed input.
 The visual effect distinguishes a fingerprint success from a password success
 by which verification channel succeeded. The fingerprint channel refuses hidden
@@ -123,7 +132,7 @@ Installed files:
 - `~/.local/bin/i3lock-doom`, the custom executable
 - `~/.config/doom-lock/wad`, the path to a WAD in its original location
 - `~/.local/share/doom-lock/sprites`, optional extracted sprites and textures
-- `~/.local/share/doom-lock/pam`, the refreshed policy for password verification
+- `~/.local/share/doom-lock/pam-session.*/policy`, a private policy during each lock
 - `~/.local/share/doom-lock/prepare-pam.py`, the policy preparation helper
 - `~/.local/share/doom-lock/lock-screen.sh.before-doom-*`, the original launcher backup
 
@@ -176,7 +185,7 @@ python3 tools/install-local.py --assets assets
 
 The explicit `--assets` installation removes a saved WAD selection. Existing
 local PNGs remain on disk when switching to WAD mode, but are not loaded.
-`--without-assets` installs only the binary, launcher, and PAM helper/policy,
+`--without-assets` installs only the binary, launcher, and PAM policy helper,
 without changing an existing content selection. Use that option for a clean
 installation whose user will configure their own WAD later.
 
@@ -212,7 +221,7 @@ during a ten-second scan, Backspace, Ctrl+U, queued input, incorrect passwords,
 fingerprint success and timeout, BFG flash, death screen and retry, Escape,
 walking and hit animations, multi-message PAM conversations, repeated restarts
 after fingerprint timeouts, queued edits after the failure screen appears, and
-the daemon fork used by the installed launcher. They also inspect the lock's
+the optional daemon fork supported by the binary. They also inspect the lock's
 bounding shape and input grabs, change the desktop during a success melt to
 check the live reveal, test fingerprint success during a failure transition,
 and check that the colorful maze moves independently of the monster animation.
@@ -220,6 +229,11 @@ They do not verify the physical sensor or the user's actual credentials.
 The scan tests also check automatic rearming with partial password input,
 success on a later automatic scan, no password fallback from the fingerprint
 worker, and retries while the persistent failure screen is visible.
+Native authentication tests deliberately leak signal descriptors across thousands
+of attempts under a 64-descriptor limit. They also check helper crashes, malformed
+results, timeouts, descriptor inheritance, reaping, and concurrent password unlock.
+Launcher tests overlap sessions to check policy isolation and cleanup. Xinerama
+tests use an isolated two-screen Xvfb server with RandR disabled.
 
 The maze tests compile the renderer with AddressSanitizer and
 UndefinedBehaviorSanitizer. All five map styles each run 23 simulated minutes

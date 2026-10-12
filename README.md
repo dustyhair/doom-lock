@@ -29,7 +29,8 @@ Fingerprint BFG kill and desktop reveal:
 
 ## Requirements
 
-This fork targets **Linux and X11**. The installer currently supports
+This fork targets **Linux and X11**, with glibc 2.34 or newer for fingerprint
+helper spawning. The installer currently supports
 Debian/Ubuntu-style PAM configurations with an initial optional fingerprint
 alternative followed by Unix or SSS password alternatives and the generated
 deny/permit rules. Other PAM layouts, password-only common-auth layouts, and
@@ -45,7 +46,8 @@ WADs without those optional graphics use a system font and plain frame.
 
 You also need system `i3lock`, Python 3.9 or newer, and a supported fingerprint
 reader enrolled through fprintd. System i3lock supplies `/etc/pam.d/i3lock`.
-Doom lock keeps password and fingerprint verification in separate PAM workers.
+Doom lock checks passwords in a PAM worker and runs each fingerprint scan in a
+fresh helper process. This contains resources leaked by fingerprint PAM modules.
 It never edits system PAM files.
 
 ## Build
@@ -92,7 +94,8 @@ enabled. The installer accepts the fingerprint/password alternative layout
 described above and checks it before installing the launcher. It preserves other
 service and login rules, including password failure delays.
 
-Check the existing policy, then install using your WAD's actual location:
+Check the existing policy using a new output directory, then install using your
+WAD's actual location:
 
 ```sh
 python3 tools/prepare-pam.py build/pam-check
@@ -103,6 +106,8 @@ For the local header build, omit `--binary`. Quote WAD paths that contain spaces
 `--wad` stores an absolute path in `~/.config/doom-lock/wad`; it does not copy
 your WAD or extract artwork. Unsupported policies stop installation. At runtime,
 policy or content loading failures make the launcher fall back to system i3lock.
+Each launch keeps its own private password policy until unlocking finishes.
+The launcher runs in the foreground for that lifetime and then removes the copy.
 
 Launch it with:
 

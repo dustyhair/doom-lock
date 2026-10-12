@@ -8,10 +8,28 @@ if [ -z "$doom_wad" ] && [ -r "$HOME/.config/doom-lock/wad" ]; then
 fi
 
 if [ -x "$doom_locker" ] && { [ -n "$doom_wad" ] || [ -f "$doom_assets/manifest.json" ]; }; then
-    if python3 "$HOME/.local/share/doom-lock/prepare-pam.py" "$HOME/.local/share/doom-lock/pam" >/dev/null; then
-        if DOOM_LOCK_WAD="$doom_wad" DOOM_LOCK_ASSETS="$doom_assets" DOOM_LOCK_PAM_DIR="$HOME/.local/share/doom-lock/pam" "$doom_locker" -c 080808; then
-            exit 0
+    # Keep a private policy until the foreground locker has really exited.
+    # Another shortcut/idle launch must never rewrite this session's policy.
+    if pam_session=$(mktemp -d "$HOME/.local/share/doom-lock/pam-session.XXXXXX"); then
+        if python3 "$HOME/.local/share/doom-lock/prepare-pam.py" "$pam_session/policy" >/dev/null; then
+            DOOM_LOCK_WAD="$doom_wad" DOOM_LOCK_ASSETS="$doom_assets" DOOM_LOCK_PAM_DIR="$pam_session/policy" "$doom_locker" -n -c 080808 &
+            doom_pid=$!
+            # The child now owns the inherited xss-lock inhibitor and closes
+            # it on MapNotify. Our waiting shell must release its own copy.
+            case "${XSS_SLEEP_LOCK_FD:-}" in
+                ''|*[!0-9]*) ;;
+                *)
+                    if [ "$XSS_SLEEP_LOCK_FD" -ge 3 ] 2>/dev/null; then
+                        eval "exec ${XSS_SLEEP_LOCK_FD}>&-"
+                    fi
+                    ;;
+            esac
+            if wait "$doom_pid"; then
+                rm -rf -- "$pam_session"
+                exit 0
+            fi
         fi
+        rm -rf -- "$pam_session"
     fi
 fi
 

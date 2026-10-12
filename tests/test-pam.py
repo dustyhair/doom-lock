@@ -3,6 +3,7 @@
 import importlib.util
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -20,6 +21,43 @@ PASSWORD = ("auth [success=2 default=ignore] pam_unix.so nullok try_first_pass\n
 
 
 class PolicyTests(unittest.TestCase):
+    def test_existing_session_is_immutable_and_new_session_has_no_stale_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "source"
+            first, second = Path(temporary) / "first", Path(temporary) / "second"
+            source.mkdir()
+            (source / "common-auth").write_text(FINGERPRINT + PASSWORD)
+            (source / "i3lock").write_text("auth include retired-policy\n")
+            (source / "retired-policy").write_text("auth required pam_permit.so\n")
+            pam.prepare(first, source)
+            snapshot = {path.name: path.read_bytes() for path in first.iterdir()}
+            (source / "retired-policy").unlink()
+            with self.assertRaises(FileExistsError):
+                pam.prepare(first, source)
+            self.assertEqual({path.name: path.read_bytes() for path in first.iterdir()}, snapshot)
+            pam.prepare(second, source)
+            self.assertFalse((second / "retired-policy").exists())
+            self.assertEqual((second / "i3lock-password").read_text(), "auth include retired-policy\n")
+
+    def test_never_writes_unfiltered_common_auth_and_removes_partial_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source, destination = Path(temporary) / "source", Path(temporary) / "copy"
+            source.mkdir()
+            (source / "common-auth").write_text(FINGERPRINT + PASSWORD)
+            (source / "i3lock").write_text("@include common-auth\n")
+            original = Path.write_bytes
+            writes = []
+            def interrupted_write(path, data):
+                if path.name == "common-auth":
+                    self.assertNotIn(b"pam_fprintd.so", data)
+                writes.append(path)
+                original(path, data)
+                if len(writes) == 2:
+                    raise OSError("simulated interrupted preparation")
+            with patch.object(Path, "write_bytes", interrupted_write), self.assertRaises(OSError):
+                pam.prepare(destination, source)
+            self.assertFalse(destination.exists())
+
     def test_supported_alternatives_preserve_password_rules(self):
         common = "# generated policy\n" + FINGERPRINT + PASSWORD
         self.assertEqual(pam.password_policy(common), "# generated policy\n" + PASSWORD)

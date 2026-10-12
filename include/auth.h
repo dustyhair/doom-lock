@@ -16,14 +16,18 @@ typedef void (*auth_notice_fn)(const char *message);
 
 /* Linux PAM backend. Call init before grabs, watch before submitting workers.
  * Re-lock snapshots in the daemon child before submitting its first worker.
- * Submit/pending and both callbacks run on the event-loop thread. Workers own
- * separate PAM transactions and locked snapshots; each worker ends its
- * transaction before reporting completion. They never touch X11 or UI state. */
+ * Submit/pending and both callbacks run on the event-loop thread. Password
+ * workers own PAM transactions and locked snapshots. Fingerprint workers exec
+ * a fresh helper process per scan, reporting notices/results over a private
+ * socket. Neither worker touches X11 or UI state. */
 bool auth_init(const char *username, const char *confdir, const char *display);
 bool auth_lock_memory(void);
 void auth_watch(struct ev_loop *loop, auth_result_fn result, auth_notice_fn notice);
 bool auth_submit(auth_channel_t channel, const char *password);
 bool auth_pending(auth_channel_t channel);
-/* At process exit, release idle handles. Pending workers end with the process. */
+/* At process exit, reap fingerprint helpers and release idle handles.
+ * Pending password workers end with the process. */
 void auth_close(void);
+/* Internal exec entry point. The parent supplies a private socket on fd 3. */
+int auth_fingerprint_worker(const char *username, const char *display, const char *parent_pid);
 #endif

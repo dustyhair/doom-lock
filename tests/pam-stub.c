@@ -48,7 +48,9 @@ int pam_authenticate(pam_handle_t *handle, int flags) {
     struct pam_response *responses = NULL;
     if (!test->password_only) {
         /* Linux must keep password snapshots locked in the daemon child. */
-        FILE *status = fopen("/proc/self/status", "r");
+        char parent_status[64];
+        snprintf(parent_status, sizeof(parent_status), "/proc/%ld/status", (long)getppid());
+        FILE *status = fopen(parent_status, "r");
         char line[256];
         unsigned long locked = 0;
         if (status) {
@@ -58,7 +60,13 @@ int pam_authenticate(pam_handle_t *handle, int flags) {
         }
         if (!locked) trace_event("password-memory-not-locked");
         trace_event("empty"); /* Fingerprint worker started. */
-        fingerprint_scans++;
+        /* Each scan execs a fresh process. Count scans in the shared trace. */
+        FILE *scan_trace = fopen(getenv("DOOM_TEST_TRACE"), "r");
+        char trace_line[64];
+        while (scan_trace && fgets(trace_line, sizeof(trace_line), scan_trace)) {
+            if (strcmp(trace_line, "empty\n") == 0) fingerprint_scans++;
+        }
+        if (scan_trace) fclose(scan_trace);
         if (notify(conversation, "Place your right index finger on the reader", PAM_TEXT_INFO) != PAM_SUCCESS)
             return PAM_AUTH_ERR;
         const char *mode = getenv("DOOM_TEST_MODE");

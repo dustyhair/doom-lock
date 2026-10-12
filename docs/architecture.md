@@ -23,10 +23,15 @@ plugin system or separate graphics engine.
 ## Authentication and threads
 
 The event-loop thread owns input and UI state. Only `auth.c` calls PAM.
-Password and fingerprint channels have separate handles and one worker each.
-Each attempt ends its PAM transaction with `pam_end`, and the next attempt
-starts a fresh transaction. This releases module resources between scans so
-continuous fingerprint retries do not exhaust the process's file descriptors.
+Password and fingerprint channels have one worker thread each. Password checks
+end their PAM transaction with `pam_end` and start a new one for the next attempt.
+Fingerprint workers use `posix_spawn` to exec the same binary as a fresh helper
+for each scan. Helpers inherit only standard streams and a private message
+socket, so they have no password snapshot or X11 connection. Process exit
+reclaims descriptors leaked by PAM modules even when `pam_end` cannot release them.
+The parent accepts success only after a complete result and a successful helper
+exit. Crashes, malformed messages, and the 120-second watchdog fail closed.
+Shutdown kills and reaps active helpers; helpers also die if their parent dies.
 `auth_submit` copies a password into the worker's snapshot before creating its
 thread. The worker erases that snapshot before reporting completion through
 `ev_async`. The completion callback joins the worker before reading its result.
@@ -44,7 +49,11 @@ keyboard and pointer grabs throughout the success animation and melt.
 
 The policy helper removes only the validated optional fingerprint alternative
 from a copy of `common-auth`. It preserves the remaining relative jump targets
-and all other service files. Authentication factors outside that validated block
+and all other service files. Each foreground launcher session owns a new private
+policy directory, removed after the locker exits. Preparation refuses existing
+destinations and never writes an unfiltered `common-auth`. Deleted source files
+cannot survive into a new session, and overlapping launches cannot rewrite
+each other's policies. Authentication factors outside that validated block
 remain part of the service. Broadening supported PAM layouts needs a separate
 policy review and negative tests.
 

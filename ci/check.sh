@@ -11,6 +11,7 @@ python3 tests/test-auth.py
 python3 tests/test-pam.py
 python3 tests/test-install.py
 python3 tests/test-launcher.py
+python3 tests/test-randr.py
 if [ "$wad" = true ]; then
     python3 tests/test-assets.py
     DOOM_TEST_WAD="$PWD/build/test-assets/generated.wad" python3 tests/test-level.py

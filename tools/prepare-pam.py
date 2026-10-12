@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Copy the system policy for a password check that skips the initial scan."""
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -50,11 +51,17 @@ def prepare(destination, source=Path("/etc/pam.d")):
     configs = {config.name: config.read_bytes() for config in source.iterdir() if config.is_file()}
     filtered = password_policy(configs["common-auth"].decode())
     password_service = configs["i3lock"]
-    destination.mkdir(parents=True, exist_ok=True)
-    for name, data in configs.items():
-        (destination / name).write_bytes(data)
-    (destination / "common-auth").write_text(filtered)
-    (destination / "i3lock-password").write_bytes(password_service)
+    # The caller owns this new directory for one session. Never overwrite a
+    # policy that a running locker might still read on its next attempt.
+    configs["common-auth"] = filtered.encode()
+    configs["i3lock-password"] = password_service
+    destination.mkdir(mode=0o700, parents=True, exist_ok=False)
+    try:
+        for name, data in configs.items():
+            (destination / name).write_bytes(data)
+    except BaseException:
+        shutil.rmtree(destination)
+        raise
     print(f"Prepared password policy in {destination}")
 
 

@@ -1070,6 +1070,9 @@ static void raise_loop(xcb_window_t window) {
 }
 
 int main(int argc, char *argv[]) {
+    if (argc == 5 && strcmp(argv[1], "--fingerprint-worker") == 0) {
+        _exit(auth_fingerprint_worker(argv[2], argv[3], argv[4]));
+    }
     struct passwd *pw;
     char *username;
     char *image_path = NULL;
